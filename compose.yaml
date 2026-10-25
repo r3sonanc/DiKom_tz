@@ -1,0 +1,14 @@
+services:
+  warehouse:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      WAREHOUSE_MAP: ${WAREHOUSE_MAP:-normal}
+      WAREHOUSE_ROBOTS: ${WAREHOUSE_ROBOTS:-3}
+    init: true
+    stop_grace_period: 10s
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,12 @@
+.git
+.idea
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+build
+install
+log
+versions
+artifacts
+*.egg-info

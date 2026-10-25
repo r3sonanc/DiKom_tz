@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#16263a">
+  <title>ДиКом · Диспетчер склада</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%23246be5'/%3E%3Cpath d='M12 28h17v-4h-3V10H15v8c0 3-1 5-3 6zm7-14h3v10h-5c1-2 2-4 2-6z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="ДиКом, диспетчер склада"><span class="brand-mark" aria-hidden="true">Д</span><span>ДиКом <small>WAREHOUSE LAB</small></span></a>
+    <span class="app-title">Диспетчер склада <span class="version">ROS 2 · Jazzy</span></span>
+    <div class="connection"><span id="connectionDot" class="status-dot"></span><span id="connectionText" role="status">Подключение…</span></div>
+  </header>
+
+  <main class="workspace">
+    <section class="overview" aria-label="Состояние симуляции">
+      <div class="page-heading"><p class="eyebrow">ЦЕНТР УПРАВЛЕНИЯ</p><h1>Склад в движении</h1><p>Навигация, телеметрия и управление роботами в реальном времени.</p></div>
+      <div class="metrics">
+        <div class="metric"><span>В сети</span><strong id="onlineMetric">—</strong><small>роботов</small></div>
+        <div class="metric"><span>В движении</span><strong id="movingMetric">—</strong><small>сейчас</small></div>
+        <div class="metric"><span>Выполнено</span><strong id="completedMetric">—</strong><small>приказов</small></div>
+        <div class="metric"><span>Ошибки</span><strong id="errorMetric">—</strong><small>активных</small></div>
+      </div>
+    </section>
+
+    <section class="toolbar card" aria-label="Настройки симуляции">
+      <div class="scenario-controls"><label for="mapSelect">Карта</label><select id="mapSelect"><option value="normal">Обычный склад</option><option value="hardcore">Узкие коридоры</option></select><label for="robotCount">Роботы</label><input id="robotCount" type="number" min="1" max="3" value="3" aria-label="Число роботов"><button id="resetButton" class="button secondary" type="button">Новая симуляция</button></div>
+      <label class="toggle-label" for="darkFactory"><span><strong>Тёмный цех</strong><small>Непрерывные случайные задания</small></span><input id="darkFactory" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+    </section>
+
+    <div class="main-grid">
+      <section class="map-card card" aria-label="Карта склада">
+        <div class="section-header"><div><h2>Карта склада</h2><p id="mapCaption">Ожидание данных симулятора</p></div><div class="map-tools"><button id="zoomOut" class="icon-button" type="button" title="Отдалить" aria-label="Отдалить">−</button><button id="zoomIn" class="icon-button" type="button" title="Приблизить" aria-label="Приблизить">+</button><button id="fitMap" class="button secondary compact" type="button">Вся карта</button></div></div>
+        <div class="canvas-wrap" id="canvasWrap"><canvas id="mapCanvas" tabindex="0" aria-label="Интерактивная карта склада. Выберите робота в списке и точку назначения в панели управления."></canvas><div id="emptyState" class="map-empty"><span class="empty-icon">⌁</span><strong>Подключаемся к складу</strong><span>Карта появится после первой телеметрии</span></div><div class="map-overlay"><span class="live-badge"><span class="status-dot"></span>LIVE</span><span id="simulationTime">00:00</span></div></div>
+        <div class="map-footer"><div class="legend"><span><i class="legend-node"></i>Узел</span><span><i class="legend-parking">P</i>Парковка</span><span><i class="legend-route"></i>Маршрут</span><span><i class="legend-blocked"></i>Блокировка</span></div><span class="map-hint">Колесо — масштаб · перетаскивание — обзор · клик — выбор</span></div>
+      </section>
+
+      <aside class="control-card card" aria-label="Управление роботом">
+        <div class="section-header"><div><h2>Управление роботом</h2><p>Выберите робота на карте или в списке</p></div></div>
+        <div class="control-body">
+          <label class="field-label" for="robotSelect">Робот</label><select id="robotSelect"><option value="">Нет подключённых роботов</option></select>
+          <div class="robot-summary"><span class="robot-avatar" id="robotAvatar">R</span><div><strong id="selectedRobotName">Робот не выбран</strong><span id="selectedRobotState">Ожидание телеметрии</span></div><span id="robotStateDot" class="status-dot"></span></div>
+          <div class="telemetry"><div><span>Позиция, м</span><strong id="positionValue">—</strong></div><div><span>Ориентация</span><strong id="headingValue">—</strong></div><div><span>Скорость, м/с</span><strong id="speedValue">—</strong></div><div><span>Поворот, рад/с</span><strong id="angularValue">—</strong></div></div>
+          <div class="order-line"><span class="field-label">Текущий приказ</span><strong id="orderValue">—</strong><span id="routeValue" class="muted">Маршрут не назначен</span></div>
+          <div id="robotError" class="alert" hidden></div>
+
+          <div class="command-section"><label class="field-label" for="targetSelect">Точка назначения</label><div class="destination"><select id="targetSelect"><option value="">Выберите узел на карте</option></select><button id="moveButton" class="button primary" type="button" disabled>Отправить <span aria-hidden="true">→</span></button></div><div class="command-buttons"><button id="parkButton" class="button secondary" type="button" disabled>На парковку</button><button id="stopButton" class="button danger" type="button" disabled><span aria-hidden="true">■</span> Остановить</button></div><div class="command-buttons"><button id="resumeButton" class="button secondary" type="button" disabled>Возобновить</button><button id="clearErrorButton" class="button secondary" type="button" disabled>Сбросить ошибку</button></div></div>
+
+          <div class="manual-header"><label class="checkbox-label" for="manualEnabled"><input id="manualEnabled" type="checkbox">Ручное управление</label><span class="key-hint">W A S D</span></div>
+          <div class="manual-controls" id="manualControls"><button type="button" class="key up" data-key="w" aria-label="Вперёд: удерживайте W" disabled>W<span>вперёд</span></button><button type="button" class="key left" data-key="a" aria-label="Поворот влево: удерживайте A" disabled>A<span>влево</span></button><button type="button" class="key down" data-key="s" aria-label="Назад: удерживайте S" disabled>S<span>назад</span></button><button type="button" class="key right" data-key="d" aria-label="Поворот вправо: удерживайте D" disabled>D<span>вправо</span></button></div><p class="help-text">Удерживайте клавиши или кнопки. Отпускание или потеря фокуса останавливает робота. Остальной парк на паузе. Для выхода вернитесь к узлу и выключите режим.</p>
+
+          <details class="fault-panel"><summary>Проверка отказов <span>Тестовый стенд</span></summary><label><span>Застревание<small>Блокировка занятого участка</small></span><input id="faultStuck" type="checkbox"></label><label><span>Потеря связи<small>Прекратить обмен с роботом</small></span><input id="faultLink" type="checkbox"></label><label><span>Троттлинг связи<small>Редкая доставка телеметрии</small></span><input id="faultThrottle" type="checkbox"></label></details>
+        </div>
+      </aside>
+    </div>
+
+    <section class="fleet-card card" aria-label="Состояние всех роботов"><div class="section-header"><div><h2>Парк роботов</h2><p>Состояние каждого участника симуляции</p></div><span id="fleetCount" class="pill">0 роботов</span></div><div class="table-wrap"><table><thead><tr><th>Робот</th><th>Состояние</th><th>Позиция, м</th><th>Скорость</th><th>Приказ</th><th>Связь</th></tr></thead><tbody id="fleetBody"><tr><td colspan="6" class="table-empty">Ожидание первого обновления</td></tr></tbody></table></div></section>
+
+    <section class="events-card card" aria-label="Журнал событий"><div class="section-header"><div><h2>Журнал событий</h2><p>Последние события диспетчера и результаты команд</p></div><button id="clearEvents" class="button secondary compact" type="button">Очистить</button></div><ol id="eventsList" class="events-list" aria-live="polite" aria-relevant="additions"><li class="event muted"><time>—</time><span>Ожидание событий</span></li></ol></section>
+  </main>
+  <footer class="app-footer"><span>ДиКом · Симулятор склада</span><span>Двухколёсная модель · графовая навигация · резервирование маршрутов</span></footer>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

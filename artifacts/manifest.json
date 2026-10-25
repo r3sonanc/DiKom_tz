@@ -1,0 +1,16 @@
+{
+  "commented": {
+    "path": "artifacts/dikom-commented.zip",
+    "bytes": 84631,
+    "sha256": "1827db9f64e89cc961277295869943a98e47f1d30fe94bcb98330c5879e44965",
+    "files": 41,
+    "python_ast_verified": 0
+  },
+  "clean": {
+    "path": "artifacts/dikom-clean.zip",
+    "bytes": 81572,
+    "sha256": "79a037645b672d75ca6beca16e2c5b44989388cef3228ea5ab50530d9f85dc26",
+    "files": 41,
+    "python_ast_verified": 19
+  }
+}

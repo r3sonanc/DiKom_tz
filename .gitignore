@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.idea/
+build/
+install/
+log/
+*.egg-info/
+versions/
+artifacts/*.zip
+artifacts/*.png
