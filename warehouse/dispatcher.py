@@ -1,10 +1,3 @@
-"""Central dispatcher with conservative, bounded space-time reservations.
-
-The planner knows graph positions, never simulated physics. Both ends of a moving
-edge remain occupied until its robot acknowledges arrival. This deliberately
-forbids following another robot into a just-vacated node in the same round.
-"""
-
 from __future__ import annotations
 
 from collections import deque
@@ -15,7 +8,6 @@ import math
 import random
 from typing import Any
 
-
 @dataclass
 class RobotRecord:
     state: dict[str, Any] = field(default_factory=dict)
@@ -24,15 +16,7 @@ class RobotRecord:
     boot_id: str | None = None
     retired_boots: set[str] = field(default_factory=set)
 
-
 class CooperativePlanner:
-    """Prioritized Cooperative A* with bounded priority-order retries.
-
-    A complete safe plan is required before issuing its first edge. The search
-    is deliberately bounded: difficult or impossible requests wait safely and
-    expose a reason instead of consuming unbounded CPU or guessing a route.
-    """
-
     def __init__(self, warehouse_map: Any, max_expansions: int = 300_000):
         self.map = warehouse_map
         self.max_expansions = max_expansions
@@ -60,18 +44,17 @@ class CooperativePlanner:
         blocked = set(blocked or ())
         self.reason = ""
         if len(set(starts.values())) != len(starts):
-            self.reason = "Two robots report the same node"
+            self.reason = "Два робота сообщают об одном и том же узле"
             return None
         if len(set(goals.values())) != len(goals):
-            self.reason = "Destination nodes must be distinct"
+            self.reason = "Точки назначения роботов должны различаться"
             return None
         if any(node in blocked for node in starts.values()):
-            self.reason = "A start node is blocked"
+            self.reason = "Начальный узел заблокирован"
             return None
         if any(math.isinf(self.distance(starts[r], goals[r])) for r in starts):
-            self.reason = "A destination is unreachable"
+            self.reason = "Точка назначения недоступна"
             return None
-        # Active robots first; deterministic tie breaking aids reproducibility.
         robot_ids = sorted(starts, key=lambda r: (starts[r] == goals[r], r))
         horizon = 3 * len(self.map.nodes) + len(robot_ids) ** 2
         for order in permutations(robot_ids):
@@ -79,9 +62,6 @@ class CooperativePlanner:
             planned: dict[str, list[str]] = {}
             for index, robot_id in enumerate(order):
                 unplanned = {starts[r] for r in order[index + 1:]}
-                # Reserve a short initial interval for robots that have not yet
-                # been planned. Descending intervals let a queue clear from its
-                # free end before a higher-priority robot enters its corridor.
                 initial_hold = (len(order) - index - 1) * len(order)
                 path = self._search(starts[robot_id], goals[robot_id], planned,
                                     blocked, unplanned, initial_hold, horizon)
@@ -92,9 +72,9 @@ class CooperativePlanner:
                 length = max(map(len, planned.values()), default=1)
                 return {r: p + [p[-1]] * (length - len(p)) for r, p in planned.items()}
             if self.last_expansions >= self.max_expansions:
-                self.reason = "Planning budget exhausted; robots remain stopped"
+                self.reason = "Лимит поиска исчерпан; роботы остаются на месте"
                 return None
-        self.reason = "No safe plan found within the planning horizon"
+        self.reason = "Безопасный маршрут в пределах глубины поиска не найден"
         return None
 
     def _search(self, start: str, goal: str, planned: dict[str, list[str]],
@@ -138,10 +118,7 @@ class CooperativePlanner:
                 heappush(queue, (time + 1 + distance, time + 1, neighbor))
         return None
 
-
 class Dispatcher:
-    """Transport-independent fleet state machine; all times are monotonic seconds."""
-
     def __init__(self, warehouse_map: Any, robot_ids: list[str] | tuple[str, ...] = (),
                  heartbeat_timeout: float = 1.5, command_lease: float = 0.9,
                  seed: int = 7):
@@ -155,7 +132,7 @@ class Dispatcher:
         self.command_lease = command_lease
         self.dark_factory = False
         self.paused = False
-        self.reason = "Waiting for telemetry"
+        self.reason = "Ожидание телеметрии"
         self._random = random.Random(seed)
         self._serial = 0
         self._round: dict[str, dict[str, Any]] = {}
@@ -192,7 +169,7 @@ class Dispatcher:
         if robot.boot_id is not None and boot_id != robot.boot_id:
             robot.retired_boots.add(robot.boot_id)
             self.paused = True
-            self.reason = f"Robot {robot_id} restarted; resume after checking its position"
+            self.reason = f"Робот {robot_id} перезапущен; проверьте его положение перед возобновлением"
             self._schedule_dirty = True
         robot.state = dict(state)
         robot.received_at, robot.seq, robot.boot_id = now, seq, boot_id
@@ -202,7 +179,7 @@ class Dispatcher:
     def submit(self, robot_id: str, kind: str | dict[str, Any], target: str | None = None,
                linear: float = 0.0, angular: float = 0.0, now: float | None = None) -> dict[str, Any]:
         if robot_id not in self.robots:
-            raise ValueError(f"Unknown robot: {robot_id}")
+            raise ValueError(f"Неизвестный робот: {robot_id}")
         if isinstance(kind, dict):
             payload = kind
             return self.submit(robot_id, payload.get("type", ""), payload.get("target"),
@@ -214,12 +191,12 @@ class Dispatcher:
                 candidates = [n for n, node in self.map.nodes.items()
                               if node.parking and n not in occupied]
                 if not candidates:
-                    raise ValueError("No free parking node")
+                    raise ValueError("Нет свободной парковки")
                 target = min(candidates, key=lambda n: (self.planner.distance(source, n), n))
             if target not in self.map.nodes:
-                raise ValueError(f"Unknown destination: {target}")
+                raise ValueError(f"Неизвестная точка назначения: {target}")
             if target in {g for r, g in self.goals.items() if r != robot_id}:
-                raise ValueError("Another robot already has this destination")
+                raise ValueError("Эта точка назначения уже назначена другому роботу")
             self.goals[robot_id] = target
             self._auto_goals.discard(robot_id)
             self._schedule_dirty = True
@@ -227,14 +204,14 @@ class Dispatcher:
             self.paused = True
             self._manual_robot = None
             self._stop_commands.clear()
-            self.reason = "Fleet stopped by operator"
+            self.reason = "Парк остановлен оператором"
         elif kind == "resume":
             for rid, robot in self.robots.items():
                 state = robot.state
                 if state.get("error"):
-                    raise ValueError(f"Clear the error on {rid} before resuming")
+                    raise ValueError(f"Перед возобновлением сбросьте ошибку у робота {rid}")
                 if state.get("node_id") is None and (rid not in self._round or rid == self._manual_robot):
-                    raise ValueError(f"Robot {rid} must return to a graph node before resuming")
+                    raise ValueError(f"Перед возобновлением верните робота {rid} к навигационному узлу")
             if self._manual_robot is not None:
                 self._round.pop(self._manual_robot, None)
                 self._held.pop(self._manual_robot, None)
@@ -244,23 +221,21 @@ class Dispatcher:
             self._schedule_dirty = True
         elif kind == "manual":
             if self._manual_robot not in (None, robot_id):
-                raise ValueError("Only one robot can be controlled manually")
+                raise ValueError("Ручное управление доступно только для одного робота одновременно")
             if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in (linear, angular)):
-                raise ValueError("Manual velocity must be finite")
+                raise ValueError("Скорости ручного управления должны быть конечными числами")
             self.paused = True
             self._manual_robot = robot_id
             self._manual_velocity = (max(-0.5, min(0.5, linear)), max(-1.5, min(1.5, angular)))
-            # The adapter should pass its monotonic clock. Without it the next
-            # tick starts the manual watchdog, retaining a convenient pure API.
             self._manual_updated = now if now is not None else math.inf
-            self.reason = "Manual control: fleet is paused"
+            self.reason = "Ручное управление: остальной парк на паузе"
             self._schedule_dirty = True
         elif kind == "clear_error":
             self._outbox.append(self._command(robot_id, "clear_error"))
             self._recover.add(robot_id)
             self._schedule_dirty = True
         else:
-            raise ValueError(f"Unknown command type: {kind}")
+            raise ValueError(f"Неизвестный тип команды: {kind}")
         return {"accepted": True, "robot_id": robot_id, "type": kind, "target": target}
 
     def set_dark_factory(self, enabled: bool) -> None:
@@ -272,12 +247,10 @@ class Dispatcher:
                  if now - record.received_at > self.heartbeat_timeout]
         if self._manual_updated == math.inf:
             self._manual_updated = now
-        # Missing communication stops renewals; the robot's independent lease
-        # watchdog brakes even when the stop command itself cannot be delivered.
         if stale or self.paused:
             self._frozen = True
             if stale:
-                self.reason = "Telemetry stale: " + ", ".join(stale)
+                self.reason = "Нет свежей телеметрии: " + ", ".join(stale)
             commands.extend(self._stops(exclude=self._manual_robot if not stale else None))
             manual_ready = (not stale and self._manual_robot is not None
                             and now - self._last_motion_sent >= self.command_lease
@@ -295,7 +268,7 @@ class Dispatcher:
             self._frozen = False
             self._stop_commands.clear()
         if not self.robots:
-            self.reason = "Waiting for robots"
+            self.reason = "Ожидание подключения роботов"
             return commands
         if self._round:
             unfinished = {}
@@ -344,11 +317,10 @@ class Dispatcher:
             self._assign_random_goals(now)
         if not self.goals:
             self._schedule = {}
-            self.reason = "Idle"
+            self.reason = "Ожидание заданий"
             return self._count(commands)
         if not self._schedule:
             self._build_schedule(now)
-        # Empty all-wait rounds need no transport command or wall-clock delay.
         while self._schedule and max(map(len, self._schedule.values())) > 1:
             moving = {r: p[:2] for r, p in self._schedule.items() if len(p) > 1 and p[0] != p[1]}
             if moving:
@@ -356,7 +328,7 @@ class Dispatcher:
                     self._round[robot_id] = self._command(robot_id, "move", path=path)
                 commands.extend(self._round.values())
                 self._last_motion_sent = now
-                self.reason = "Executing reserved routes"
+                self.reason = "Выполнение согласованных маршрутов"
                 break
             for path in self._schedule.values():
                 if len(path) > 1:
@@ -377,11 +349,11 @@ class Dispatcher:
                 starts[robot_id] = node
         active = {r: g for r, g in self.goals.items() if r in starts}
         if not active:
-            self.reason = "Waiting for stopped or faulty robots"
+            self.reason = "Ожидание остановленных или неисправных роботов"
             return
         goals = self._choose_endpoints(starts, active, blocked)
         if goals is None:
-            self.reason = "No free node for yielding"
+            self.reason = "Нет свободного узла, чтобы уступить дорогу"
             return
         signature = (tuple(sorted(starts.items())), tuple(sorted(goals.items())), tuple(sorted(blocked)))
         if signature == self._last_plan_signature and now - self._last_plan_at < 1.0:
@@ -390,10 +362,6 @@ class Dispatcher:
         self.metrics["plans"] += 1
         schedule = self.planner.plan(starts, goals, blocked)
         if schedule is None and any(r not in self._auto_goals for r in active):
-            # A joint assignment may defeat prioritized planning even though a
-            # single task is easy. Complete one explicit task while the others
-            # wait/yield; their original goals remain queued. All attempts share
-            # the original expansion budget, preserving the CPU bound.
             budget = self.planner.max_expansions
             expansions, attempts = self.planner.last_expansions, self.planner.last_attempts
             try:
@@ -417,9 +385,6 @@ class Dispatcher:
         if schedule is None:
             self.metrics["planning_failures"] += 1
             self.reason = self.planner.reason
-            # Random workload destinations are disposable. Re-select them on
-            # the next tick instead of indefinitely retrying an unlucky joint
-            # assignment; explicit operator destinations are never discarded.
             if self.dark_factory:
                 for robot_id in self._auto_goals:
                     self.goals.pop(robot_id, None)
@@ -435,8 +400,6 @@ class Dispatcher:
                          if self.planner.distance(starts[rid], node)
                          + self.planner.distance(node, goal)
                          == self.planner.distance(starts[rid], goal)}
-        # Preserve idle endpoints whenever possible. An idle robot occupying a
-        # requested endpoint is assigned a nearby free yield node instead.
         for robot_id, source in starts.items():
             if robot_id in goals:
                 continue
@@ -467,8 +430,6 @@ class Dispatcher:
             candidates = [(d, n) for d, n in candidates if not math.isinf(d)]
             if not candidates:
                 continue
-            # The farthest third avoids near-neighbor jitter while preserving
-            # deterministic seeded variety in the dark-factory workload.
             candidates.sort(reverse=True)
             _, target = self._random.choice(candidates[:max(1, len(candidates) // 3)])
             self.goals[robot_id] = target

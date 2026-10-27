@@ -2,6 +2,7 @@ import copy
 import math
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 
 from warehouse.api import create_app
@@ -9,8 +10,6 @@ from warehouse.robot import WorldCore
 
 
 class InMemoryTransport:
-    """Exercise the exact JSON boundary with real physics, without rclpy."""
-
     def __init__(self):
         self.world = WorldCore()
         self.revisions = {}
@@ -98,3 +97,51 @@ def test_runtime_filters_old_world_and_out_of_order_telemetry():
     assert runtime.world_id != world_id
     runtime.step(time.monotonic() + 0.5)
     assert runtime.raw_states == {}
+
+
+@pytest.mark.parametrize("body", [
+    {"type": "move"},
+    {"type": "move", "target": "r1c5", "unexpected": True},
+    {"type": "manual", "linear": "not-a-number"},
+    {"type": "manual", "angular": 100},
+])
+def test_invalid_command_is_reported_without_changing_goals(body):
+    app = create_app(InMemoryTransport(), robots=1)
+    with TestClient(app) as client:
+        for _ in range(40):
+            if client.get("/api/health").status_code == 200:
+                break
+            time.sleep(0.02)
+        response = client.post("/api/robots/robot1/commands", json=body)
+        assert response.status_code == 422
+        assert client.get("/api/state").json()["dispatcher"]["goals"] == {}
+
+
+def test_two_websocket_clients_receive_state_and_one_can_disconnect():
+    app = create_app(InMemoryTransport(), robots=1)
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as first:
+            with client.websocket_connect("/ws") as second:
+                first_state = first.receive_json()
+                second_state = second.receive_json()
+                assert first_state["world_id"] == second_state["world_id"]
+                assert first_state["map"] == second_state["map"]
+            assert first.receive_json()["type"] == "snapshot"
+
+
+def test_robot_link_can_be_offline_while_websocket_still_works():
+    transport = InMemoryTransport()
+    app = create_app(transport, robots=1)
+    with TestClient(app) as client:
+        for _ in range(40):
+            if client.get("/api/health").status_code == 200:
+                break
+            time.sleep(0.02)
+        transport.receive = lambda: []
+        runtime = app.state.runtime
+        runtime.dispatcher.robots["robot1"].received_at = time.monotonic() - 2
+        with client.websocket_connect("/ws") as websocket:
+            snapshot = websocket.receive_json()
+        assert snapshot["type"] == "snapshot"
+        assert snapshot["robots"][0]["connected"] is False
+        assert snapshot["robots"][0]["last_seen"] > 1.5

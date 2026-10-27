@@ -1,12 +1,13 @@
 "use strict";
 
-// The browser only sends operator intent. Physics, routing and safety stay on the server.
 (() => {
   const $ = (id) => document.getElementById(id);
   const canvas = $("mapCanvas");
   const ctx = canvas.getContext("2d");
   const colors = ["#2f76de", "#a270c8", "#e8953d", "#239d91", "#d76387"];
   const stateLabels = { idle: "Ожидает приказ", moving: "В движении", paused: "Остановлен", stopped: "Остановлен", manual: "Ручное управление", error: "Ошибка", waiting: "Ожидает путь", parked: "На парковке", offline: "Нет связи", connecting: "Подключается" };
+  const errorLabels = { STUCK: "Движение заблокировано", INVALID_COMMAND: "Некорректная команда", INVALID_PATH: "Некорректный маршрут", POINT_NOT_FOUND: "Узел не найден", OFF_GRAPH: "Робот вне маршрута", NOT_AT_NODE: "Робот вне начального узла", COLLISION_WALL: "Остановка перед стеной", COLLISION_ROBOT: "Остановка перед другим роботом" };
+  const faultLabels = { stuck: "Застревание", link_lost: "Потеря связи", throttle: "Замедление связи" };
   const state = { snapshot: null, robots: [], nodes: new Map(), selectedId: "", targetId: "", socket: null, connected: false, lastMessage: 0, trails: new Map(), events: [], seenEvents: new Set(), mapKey: "", manualId: null, manualChanging: false };
   const view = { scale: 35, x: 0, y: 0, width: 1, height: 1, fitted: false, dirty: true };
   const keys = new Set();
@@ -22,8 +23,17 @@
   function number(value, digits = 2) { return value != null && Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : "—"; }
   function selectedRobot() { return state.robots.find((robot) => robot.id === state.selectedId); }
   function robotColor(id) { return colors[Math.max(0, state.robots.findIndex((robot) => robot.id === id)) % colors.length]; }
-  function errorText(error) { return typeof error === "string" ? error : error ? [error.code, error.message].filter(Boolean).join(": ") : ""; }
-  function robotStatus(robot) { return robot.connected === false ? "Нет связи" : stateLabels[robot.state] || robot.state || "Ожидание"; }
+  function robotName(id) { return String(id).replace(/^robot(\d+)$/i, "Робот $1"); }
+  function errorText(error) {
+    if (!error) return "";
+    const message = typeof error === "string" ? error : error.message;
+    return message && /[а-яё]/i.test(message) ? message : errorLabels[error.code] || "Ошибка робота";
+  }
+  function eventText(message) {
+    if (message && typeof message === "object") return errorText(message);
+    return String(message).replace(/\{['"]code['"]:\s*['"]([^'"]+)['"],\s*['"]message['"]:\s*(['"])(.*?)\2\}/g, (_, code, quote, detail) => errorText({ code, message: detail })).replace(/\brobot(\d+)\b/gi, "Робот $1");
+  }
+  function robotStatus(robot) { return robot.connected === false ? "Нет связи" : stateLabels[robot.state] || "Ожидание"; }
   function orderText(robot) {
     if (!robot.order) return "Нет активного приказа";
     if (typeof robot.order === "string") return robot.order;
@@ -36,15 +46,14 @@
   }
   function toast(message, isError = false) {
     const el = $("toast");
-    el.textContent = message;
+    el.textContent = eventText(message);
     el.classList.toggle("error", isError);
     el.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { el.hidden = true; }, isError ? 6500 : 3500);
   }
   function addEvent(message, level = "info", time = new Date().toISOString()) {
-    state.events.push({ message: String(message), level, time });
-    // Both the log and its deduplication index have fixed upper bounds for long runs.
+    state.events.push({ message: eventText(message), level, time });
     if (state.events.length > 80) state.events.splice(0, state.events.length - 80);
     const fragment = document.createDocumentFragment();
     for (const entry of state.events.slice(-35).reverse()) {
@@ -68,12 +77,12 @@
       const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: controller.signal, ...options });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || result.ok === false) {
-        const detail = typeof result.detail === "string" ? result.detail : "Команда отклонена сервером";
+        const detail = typeof result.detail === "string" ? result.detail : Array.isArray(result.detail) ? result.detail.map((issue) => issue.msg).filter(Boolean).join("; ") || "Проверьте параметры команды" : "Команда отклонена сервером";
         throw new Error(detail);
       }
       return result;
     } catch (error) {
-      throw new Error(error.name === "AbortError" ? "Сервер не ответил вовремя" : error.message || "Ошибка соединения");
+      throw new Error(error.name === "AbortError" ? "Сервер не ответил вовремя" : error instanceof TypeError ? "Не удалось связаться с сервером" : eventText(error.message || "Ошибка соединения"));
     } finally { clearTimeout(timeout); }
   }
   function command(id, body, options) { return request(`/api/robots/${encodeURIComponent(id)}/commands`, body, options); }
@@ -112,9 +121,9 @@
     const remoteManual = robot?.state === "manual";
     const manual = Boolean(robot && (state.manualId === robot.id || remoteManual));
     const manualLocked = Boolean(state.manualId && state.manualId !== robot?.id);
-    setText("selectedRobotName", robot?.id || "Робот не выбран");
+    setText("selectedRobotName", robot ? robotName(robot.id) : "Робот не выбран");
     setText("selectedRobotState", robot ? robotStatus(robot) : "Ожидание телеметрии");
-    setText("robotAvatar", robot?.id.replace(/^robot/i, "R").slice(0, 4) || "R");
+    setText("robotAvatar", robot?.id.replace(/^robot/i, "Р").slice(0, 4) || "Р");
     $("robotAvatar").style.color = robot ? robotColor(robot.id) : "";
     $("robotStateDot").className = `status-dot ${robot ? robot.connected === false || robot.error ? "error" : "online" : ""}`;
     setText("positionValue", robot ? `${number(robot.x)} / ${number(robot.y)}` : "—");
@@ -139,7 +148,6 @@
     }
   }
   function updateFleet() {
-    // Keep rows stable so telemetry does not remove keyboard focus or cancel clicks.
     for (const [id, row] of fleetRows) if (!state.robots.some((robot) => robot.id === id)) { row.remove(); fleetRows.delete(id); }
     if (!fleetRows.size) $("fleetBody").replaceChildren();
     for (const robot of state.robots) {
@@ -147,13 +155,13 @@
       if (!row) {
         row = document.createElement("tr");
         row.tabIndex = 0;
-        row.setAttribute("aria-label", `Выбрать робота ${robot.id}`);
+        row.setAttribute("aria-label", `Выбрать: ${robotName(robot.id)}`);
         row.addEventListener("click", () => selectRobot(robot.id));
         row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectRobot(robot.id); } });
         for (let index = 0; index < 6; index++) row.append(document.createElement("td"));
         const identityWrap = document.createElement("span"); identityWrap.className = "fleet-id";
         const mark = document.createElement("i"); mark.className = "fleet-color";
-        const name = document.createElement("span"); name.textContent = robot.id;
+        const name = document.createElement("span"); name.textContent = robotName(robot.id);
         identityWrap.append(mark, name); row.cells[0].append(identityWrap);
         const badge = document.createElement("span"); row.cells[1].append(badge);
         $("fleetBody").append(row); fleetRows.set(robot.id, row);
@@ -167,7 +175,7 @@
       row.cells[3].textContent = `${number(robot.v)} м/с`;
       row.cells[4].textContent = orderText(robot); row.cells[4].title = errorText(robot.error);
       const link = row.cells[5]; link.className = `link-cell${robot.connected === false ? " lost" : ""}`;
-      link.textContent = robot.connected === false ? `Нет связи · ${number(robot.last_seen, 1)} с` : robot.fault.throttle ? `Троттлинг · ${number(robot.last_seen, 1)} с` : `В сети · ${number(robot.last_seen, 1)} с`;
+      link.textContent = robot.connected === false ? `Нет связи · ${number(robot.last_seen, 1)} с` : robot.fault.throttle ? `Замедление · ${number(robot.last_seen, 1)} с` : `В сети · ${number(robot.last_seen, 1)} с`;
     }
     setText("fleetCount", `${state.robots.length} роботов`);
   }
@@ -191,8 +199,7 @@
     }
     const ids = state.robots.map((robot) => robot.id).join("|");
     if (!state.robots.some((robot) => robot.id === state.selectedId)) state.selectedId = state.robots[0]?.id || "";
-    if (ids !== priorIds) populateSelect($("robotSelect"), state.robots.map((robot) => [robot.id, robot.id]), state.selectedId);
-    // Only the owner of a manual session sends velocity keepalives. Another browser may observe it.
+    if (ids !== priorIds) populateSelect($("robotSelect"), state.robots.map((robot) => [robot.id, robotName(robot.id)]), state.selectedId);
     if (state.manualId && !state.robots.some((robot) => robot.id === state.manualId)) { releaseKeys(); state.manualId = null; }
     for (const robot of state.robots) {
       const trail = state.trails.get(robot.id) || [];
@@ -214,7 +221,7 @@
     updateRobotCount();
     const seconds = Number(snapshot.sim_time ?? snapshot.time ?? 0);
     const timestamp = new Date(snapshot.time);
-    setText("simulationTime", Number.isFinite(seconds) ? `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}` : !Number.isNaN(timestamp.getTime()) ? timestamp.toLocaleTimeString("ru-RU", { hour12: false }) : "LIVE");
+    setText("simulationTime", Number.isFinite(seconds) ? `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}` : !Number.isNaN(timestamp.getTime()) ? timestamp.toLocaleTimeString("ru-RU", { hour12: false }) : "—");
     for (const entry of snapshot.events || []) {
       const key = `${entry.time}|${entry.level}|${entry.message}`;
       if (state.seenEvents.has(key)) continue;
@@ -239,16 +246,16 @@
     clearTimeout(reconnectTimer);
     const socket = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`);
     state.socket = socket;
-    socket.addEventListener("open", () => { if (state.socket !== socket) return; reconnectDelay = 600; setConnection(true, "Подключено · телеметрия"); });
+    socket.addEventListener("open", () => { if (state.socket !== socket) return; reconnectDelay = 600; setConnection(true, "Подключено"); });
     socket.addEventListener("message", (event) => {
       if (state.socket !== socket) return;
-      try { const snapshot = JSON.parse(event.data); if (!snapshot.type || snapshot.type === "snapshot") { acceptSnapshot(snapshot); setConnection(true, "Подключено · телеметрия"); } }
-      catch (error) { console.error("Invalid snapshot:", error); }
+      try { const snapshot = JSON.parse(event.data); if (!snapshot.type || snapshot.type === "snapshot") { acceptSnapshot(snapshot); setConnection(true, "Подключено"); } }
+      catch { console.error("Не удалось прочитать данные симуляции"); }
     });
     socket.addEventListener("error", () => socket.close());
     socket.addEventListener("close", () => {
       if (state.socket !== socket) return;
-      setConnection(false, "Нет связи · переподключение…");
+      setConnection(false, "Переподключение…");
       reconnectTimer = setTimeout(connect, reconnectDelay);
       reconnectDelay = Math.min(6000, reconnectDelay * 1.7);
     });
@@ -317,7 +324,6 @@
           if (a && b) line(a, b, "#4b88e88a", 5);
         }
       }
-      // Failed or disconnected robots keep their physical footprint reserved.
       if (robot.error || robot.fault.stuck || robot.connected === false) {
         const edge = robot.edge;
         const ends = Array.isArray(edge) ? edge : edge ? [edge.from, edge.to] : [];
@@ -336,15 +342,15 @@
       if (node.parking) {
         ctx.fillStyle = "#e4eef5"; ctx.fillRect(p.x - 9, p.y - 9, 18, 18);
         ctx.strokeStyle = "#a7bcd0"; ctx.lineWidth = 1; ctx.strokeRect(p.x - 9, p.y - 9, 18, 18);
-        ctx.font = "bold 11px Segoe UI, sans-serif"; ctx.fillStyle = "#5c7f9b"; ctx.textAlign = "center"; ctx.fillText("P", p.x, p.y + 4);
+        ctx.font = "bold 14px Segoe UI, sans-serif"; ctx.fillStyle = "#5c7f9b"; ctx.textAlign = "center"; ctx.fillText("П", p.x, p.y + 5);
       } else { ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = target ? "#4c84db" : "#9cafc7"; ctx.lineWidth = 1.5; ctx.stroke(); }
-      ctx.font = "9px Segoe UI, sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = target ? "#3671c9" : "#8495a9"; ctx.fillText(String(node.id), p.x, p.y + (node.parking ? 23 : 20));
+      ctx.font = "13px Segoe UI, sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = target ? "#3671c9" : "#73859c"; ctx.fillText(String(node.id), p.x, p.y + (node.parking ? 27 : 24));
     }
     for (const robot of state.robots) drawRobot(robot);
     const meter = Math.max(1, Math.floor(65 / view.scale));
     const barWidth = meter * view.scale;
     ctx.strokeStyle = "#91a2b6"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(20, view.height - 31); ctx.lineTo(20, view.height - 26); ctx.lineTo(20 + barWidth, view.height - 26); ctx.lineTo(20 + barWidth, view.height - 31); ctx.stroke();
-    ctx.fillStyle = "#8b9bad"; ctx.textAlign = "center"; ctx.font = "9px Segoe UI, sans-serif"; ctx.fillText(`${meter} м`, 20 + barWidth / 2, view.height - 13);
+    ctx.fillStyle = "#75869c"; ctx.textAlign = "center"; ctx.font = "13px Segoe UI, sans-serif"; ctx.fillText(`${meter} м`, 20 + barWidth / 2, view.height - 10);
   }
   function drawRobot(robot) {
     const p = worldPoint(robot.x, robot.y);
@@ -354,7 +360,6 @@
     if (selected) { ctx.beginPath(); ctx.arc(p.x, p.y, scale * .72 + 3, 0, Math.PI * 2); ctx.fillStyle = `${color}13`; ctx.fill(); ctx.strokeStyle = `${color}65`; ctx.lineWidth = 1.3; ctx.stroke(); }
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(-robot.theta);
     ctx.shadowColor = "#183b6a18"; ctx.shadowBlur = 5; ctx.shadowOffsetY = 2;
-    // The body is 0.8 × 0.6 m. Two visible wheels share the robot's heading.
     ctx.fillStyle = "#31435a";
     ctx.fillRect(-.24 * scale, -.39 * scale, .48 * scale, .11 * scale);
     ctx.fillRect(-.24 * scale, .28 * scale, .48 * scale, .11 * scale);
@@ -365,11 +370,11 @@
     ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.moveTo(.31 * scale, 0); ctx.lineTo(.08 * scale, -.12 * scale); ctx.lineTo(.08 * scale, .12 * scale); ctx.closePath(); ctx.fill();
     ctx.fillStyle = "#ffffff45"; ctx.fillRect(-.27 * scale, -.14 * scale, .16 * scale, .28 * scale);
     ctx.restore();
-    const label = robot.id; ctx.font = "600 10px Segoe UI, sans-serif";
+    const label = robotName(robot.id); ctx.font = "600 14px Segoe UI, sans-serif";
     const textWidth = ctx.measureText(label).width;
-    ctx.fillStyle = "#ffffffed"; ctx.beginPath(); ctx.roundRect(p.x - textWidth / 2 - 6, p.y - scale * .7 - 19, textWidth + 12, 17, 4); ctx.fill();
-    ctx.textAlign = "center"; ctx.fillStyle = robot.error || robot.connected === false ? "#c25b65" : color; ctx.fillText(label, p.x, p.y - scale * .7 - 7);
-    if (robot.error || robot.connected === false) { ctx.beginPath(); ctx.arc(p.x + scale * .42, p.y - scale * .33, 5, 0, Math.PI * 2); ctx.fillStyle = "#e56a72"; ctx.fill(); ctx.fillStyle = "#fff"; ctx.font = "bold 8px Segoe UI"; ctx.fillText("!", p.x + scale * .42, p.y - scale * .33 + 3); }
+    ctx.fillStyle = "#ffffffed"; ctx.beginPath(); ctx.roundRect(p.x - textWidth / 2 - 7, p.y - scale * .7 - 25, textWidth + 14, 23, 4); ctx.fill();
+    ctx.textAlign = "center"; ctx.fillStyle = robot.error || robot.connected === false ? "#c25b65" : color; ctx.fillText(label, p.x, p.y - scale * .7 - 8);
+    if (robot.error || robot.connected === false) { ctx.beginPath(); ctx.arc(p.x + scale * .42, p.y - scale * .33, 7, 0, Math.PI * 2); ctx.fillStyle = "#e56a72"; ctx.fill(); ctx.fillStyle = "#fff"; ctx.font = "bold 12px Segoe UI"; ctx.fillText("!", p.x + scale * .42, p.y - scale * .33 + 4); }
   }
 
   function clickMap(point) {
@@ -394,7 +399,7 @@
   $("targetSelect").addEventListener("change", (event) => { state.targetId = event.target.value; updateDetails(); view.dirty = true; });
   $("moveButton").addEventListener("click", () => operatorCommand({ type: "move", target: state.targetId }, `Назначено перемещение → ${state.targetId}`));
   $("parkButton").addEventListener("click", () => operatorCommand({ type: "park" }, "Назначена парковка"));
-  $("stopButton").addEventListener("click", () => operatorCommand({ type: "stop" }, "Парк остановлен: безопасная пауза"));
+  $("stopButton").addEventListener("click", () => operatorCommand({ type: "stop" }, "Парк остановлен"));
   $("resumeButton").addEventListener("click", () => operatorCommand({ type: "resume" }, "Движение возобновлено"));
   $("clearErrorButton").addEventListener("click", () => operatorCommand({ type: "clear_error" }, "Ошибка сброшена"));
   $("clearEvents").addEventListener("click", () => { state.events.length = 0; $("eventsList").replaceChildren(); addEvent("Журнал интерфейса очищен"); });
@@ -418,7 +423,7 @@
     $(id).addEventListener("change", async (event) => {
       const robot = selectedRobot(); if (!robot) return;
       const enabled = event.target.checked;
-      try { await request(`/api/robots/${encodeURIComponent(robot.id)}/faults`, { [field]: enabled }); addEvent(`${robot.id}: ${field} ${enabled ? "включён" : "выключен"}`, enabled ? "warning" : "info"); }
+      try { await request(`/api/robots/${encodeURIComponent(robot.id)}/faults`, { [field]: enabled }); addEvent(`${robot.id}: ${faultLabels[field].toLowerCase()} ${enabled ? "— включено" : "— выключено"}`, enabled ? "warning" : "info"); }
       catch (error) { event.target.checked = !enabled; toast(error.message, true); }
     });
   }
@@ -428,7 +433,6 @@
   function sendManual(force = false) {
     const id = state.manualId;
     if (!id || (!state.connected && !force) || (!force && !keys.size)) return manualPump;
-    // One request in flight plus one latest value: no backlog and no late nonzero command after keyup.
     manualPending = { id, velocity: manualVelocity() };
     if (manualPump) return manualPump;
     manualPump = (async () => {
@@ -443,7 +447,6 @@
   function releaseKeys() {
     const hadKeys = keys.size > 0;
     keys.clear(); updateKeys();
-    // A zero command is sent immediately, without waiting for the 100 ms keepalive.
     if (hadKeys || manualPump) return sendManual(true);
     return Promise.resolve();
   }
@@ -455,7 +458,6 @@
       await releaseKeys();
       await command(robot.id, enabled ? { type: "manual", linear: 0, angular: 0 } : { type: "resume" });
       state.manualId = enabled ? robot.id : null;
-      // Update immediately; the next snapshot remains the authority for actual motion.
       robot.state = enabled ? "manual" : "idle";
       addEvent(`${robot.id}: ручное управление ${enabled ? "включено, остальной парк на паузе" : "выключено"}`);
     } catch (error) { toast(error.message, true); }
@@ -489,7 +491,7 @@
   });
   setInterval(() => { if (keys.size && canDrive()) sendManual(); }, 100);
   setInterval(() => {
-    if (state.connected && state.lastMessage && performance.now() - state.lastMessage > 2200) { setConnection(false, "Телеметрия устарела · переподключение…"); state.socket?.close(); }
+    if (state.connected && state.lastMessage && performance.now() - state.lastMessage > 2200) { setConnection(false, "Нет свежих данных"); state.socket?.close(); }
   }, 500);
   new ResizeObserver(resize).observe($("canvasWrap"));
   function frame() { draw(); requestAnimationFrame(frame); }

@@ -1,10 +1,7 @@
-"""Run physics and the web dispatcher as independent ROS processes."""
-
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, Shutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-
 
 def generate_launch_description():
     args = [
@@ -21,8 +18,8 @@ def generate_launch_description():
         args
         + [
             Node(package="warehouse_sim", executable="simulator", output="screen",
-                 additional_env=env, on_exit=Shutdown(reason="Simulator exited")),
+                 additional_env=env, on_exit=Shutdown(reason="Работа симулятора завершена")),
             Node(package="warehouse_sim", executable="dispatcher", output="screen",
-                 additional_env=env, on_exit=Shutdown(reason="Dispatcher exited")),
+                 additional_env=env, on_exit=Shutdown(reason="Работа диспетчера завершена")),
         ]
     )

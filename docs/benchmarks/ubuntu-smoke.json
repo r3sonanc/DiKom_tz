@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "checks": [
+    "actual ROS node discovery",
+    "HTTP -> dispatcher -> ROS -> physics -> telemetry: move completed",
+    "two independent WebSocket observers received the completed movement",
+    "bidirectional link loss, safe pause, retained edge, recovery",
+    "stuck/clear and manual turn/stop/resume",
+    "throttled telemetry and restoration",
+    "hardcore map, five robots, dark-factory tasks completed"
+  ],
+  "url": "http://127.0.0.1:8000",
+  "python": "3.12.3",
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n"
+}

@@ -2,6 +2,8 @@
 
 import random
 import unittest
+from itertools import permutations
+from types import SimpleNamespace
 
 from warehouse.dispatcher import CooperativePlanner, Dispatcher
 from warehouse.map import load_map
@@ -14,7 +16,6 @@ def telemetry(robot_id, node, seq=1, boot="boot", **changes):
              "completed_command_id": None}
     state.update(changes)
     return state
-
 
 class PlannerTests(unittest.TestCase):
     def assert_safe(self, warehouse_map, plan, starts, goals, blocked=()):
@@ -77,6 +78,51 @@ class PlannerTests(unittest.TestCase):
         starts, goals = {"a": "r2c0"}, {"a": "p1"}
         self.assertIsNone(planner.plan(starts, goals, {"r2c4"}))
 
+    def test_exhaustive_two_robot_assignments_on_four_node_cycle_and_line_are_safe(self):
+        topologies = (
+            {"a": ("b", "d"), "b": ("a", "c"), "c": ("b", "d"), "d": ("a", "c")},
+            {"a": ("b",), "b": ("a", "c"), "c": ("b", "d"), "d": ("c",)},
+        )
+        cases = accepted = rejected = 0
+        for adjacency in topologies:
+            graph = SimpleNamespace(nodes=dict.fromkeys(adjacency), adjacency=adjacency)
+            planner = CooperativePlanner(graph)
+            for first_start, second_start in permutations(adjacency, 2):
+                starts = {"first": first_start, "second": second_start}
+                for first_goal, second_goal in permutations(adjacency, 2):
+                    goals = {"first": first_goal, "second": second_goal}
+                    cases += 1
+                    with self.subTest(edges=adjacency, starts=starts, goals=goals):
+                        plan = planner.plan(starts, goals)
+                        if plan is None:
+                            rejected += 1
+                            continue
+                        accepted += 1
+                        self.assertEqual(set(plan), set(starts))
+                        for robot_id, path in plan.items():
+                            self.assertEqual(path[0], starts[robot_id])
+                            self.assertEqual(path[-1], goals[robot_id])
+                            self.assertTrue(all(a == b or b in adjacency[a]
+                                                for a, b in zip(path, path[1:])))
+                        length = max(map(len, plan.values()))
+                        previous = starts
+                        for step in range(length):
+                            positions = {robot_id: path[min(step, len(path) - 1)]
+                                         for robot_id, path in plan.items()}
+                            self.assertNotEqual(positions["first"], positions["second"],
+                                                "Two robots occupied the same vertex")
+                            if step:
+                                self.assertFalse(previous["first"] == positions["second"]
+                                                 and previous["second"] == positions["first"],
+                                                 "Two robots exchanged an edge head-on")
+                                self.assertFalse(
+                                    {previous["first"], positions["first"]}
+                                    & {previous["second"], positions["second"]},
+                                    "The round shares a reserved endpoint")
+                            previous = positions
+        self.assertEqual(cases, 288)
+        self.assertGreater(accepted, 0)
+        self.assertGreater(rejected, 0, "The line includes physically impossible order swaps")
 
 class DispatcherTests(unittest.TestCase):
     def setUp(self):

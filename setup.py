@@ -5,7 +5,7 @@ from setuptools import find_packages, setup
 setup(
     name="warehouse_sim",
     version="1.0.0",
-    packages=find_packages(exclude=("tests", "tools", "versions")),
+    packages=find_packages(include=("warehouse", "warehouse.*")),
     package_data={"warehouse": ["static/*"]},
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/warehouse_sim"]),

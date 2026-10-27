@@ -2,7 +2,6 @@ import unittest
 
 from warehouse.map import edge_key, load_map, segment_distance
 
-
 class MapTests(unittest.TestCase):
     def test_normal_fixture_matches_ascii(self):
         graph = load_map("normal")

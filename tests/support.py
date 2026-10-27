@@ -5,7 +5,6 @@ import math
 from warehouse.dispatcher import Dispatcher
 from warehouse.robot import ROBOT_RADIUS, WorldCore
 
-
 class FleetHarness:
     def __init__(self, map_name="normal", robots=3, seed=7):
         self.world = WorldCore(map_name, robots, "test-world")

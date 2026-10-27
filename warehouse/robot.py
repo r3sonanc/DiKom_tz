@@ -1,11 +1,8 @@
-"""Deterministic differential-drive physics, independent of ROS and the UI."""
-
 from collections import OrderedDict
 import math
 import uuid
 
 from warehouse.map import WarehouseMap, load_map, segment_distance
-
 
 BODY_LENGTH = 0.8
 BODY_WIDTH = 0.6
@@ -19,27 +16,24 @@ MANUAL_LEASE = 0.35
 GRAPH_TOLERANCE = 0.6
 NODE_TOLERANCE = 0.06
 
-
 def angle_difference(target: float, current: float) -> float:
     return (target - current + math.pi) % (2 * math.pi) - math.pi
 
-
 def _number(value: object, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (float, int)):
-        raise ValueError(f"{name} must be a finite number")
+        raise ValueError(f"Поле {name} должно быть конечным числом")
     try:
         result = float(value)
     except OverflowError as exc:
-        raise ValueError(f"{name} must be a finite number") from exc
+        raise ValueError(f"Поле {name} должно быть конечным числом") from exc
     if not math.isfinite(result):
-        raise ValueError(f"{name} must be a finite number")
+        raise ValueError(f"Поле {name} должно быть конечным числом")
     return result
-
 
 class RobotCore:
     def __init__(self, robot_id: str, warehouse_map: WarehouseMap, start_node: str):
         if start_node not in warehouse_map.nodes:
-            raise ValueError("unknown spawn node")
+            raise ValueError("Неизвестный начальный узел робота")
         self.robot_id = robot_id
         self.map = warehouse_map
         node = self.map.nodes[start_node]
@@ -57,7 +51,6 @@ class RobotCore:
         self._lease_until = 0.0
         self._manual = (0.0, 0.0)
         self._injected_stuck = False
-        # Bounded deduplication also prevents a delayed old move undoing a stop.
         self._seen: OrderedDict[str, int] = OrderedDict()
         self._last_command_seq = -1
 
@@ -82,23 +75,22 @@ class RobotCore:
     def set_stuck(self, enabled: bool) -> None:
         self._injected_stuck = enabled
         if enabled:
-            self._fail("STUCK", "Drive is blocked by the injected obstacle")
+            self._fail("STUCK", "Движение заблокировано препятствием")
 
     def _on_edge(self, edge: tuple[str, str]) -> bool:
         a, b = (self.map.nodes[node_id] for node_id in edge)
         return segment_distance(self.x, self.y, a.x, a.y, b.x, b.y) <= NODE_TOLERANCE
 
     def command(self, command: dict, now: float, others=()) -> bool:
-        """Validate before moving. Repeated move IDs only renew their lease."""
         if not isinstance(command, dict):
-            return self._fail("INVALID_COMMAND", "Command must be an object")
+            return self._fail("INVALID_COMMAND", "Команда должна быть объектом")
         kind = command.get("type")
         command_id = command.get("command_id")
         if not isinstance(command_id, str) or not command_id or len(command_id) > 128:
-            return self._fail("INVALID_COMMAND", "A command_id string is required")
+            return self._fail("INVALID_COMMAND", "Нужен непустой строковый идентификатор команды")
         command_seq = command.get("command_seq")
         if isinstance(command_seq, bool) or not isinstance(command_seq, int) or command_seq < 0:
-            return self._fail("INVALID_COMMAND", "A nonnegative command_seq integer is required")
+            return self._fail("INVALID_COMMAND", "Номер команды должен быть неотрицательным целым числом")
         if command_id in self._seen:
             if self._seen[command_id] != command_seq or command_seq < self._last_command_seq:
                 return False
@@ -119,19 +111,19 @@ class RobotCore:
             self.status = "error" if self.error else "idle"
             self.completed_command_id = command_id
             if not self.error and self.map.distance_to_graph(self.x, self.y) > GRAPH_TOLERANCE:
-                self._fail("OFF_GRAPH", "Robot stopped too far from the navigation graph")
+                self._fail("OFF_GRAPH", "Робот остановился слишком далеко от навигационного графа")
             return True
         if kind == "clear_error":
             if self._injected_stuck or self._collision(self.x, self.y, others):
-                return self._fail("STUCK", "Remove the obstacle before clearing the error")
+                return self._fail("STUCK", "Перед сбросом ошибки устраните препятствие")
             node_id, distance = self.map.nearest_node(self.x, self.y)
             retained_edge = bool(self.edge and self._on_edge(self.edge))
             if distance > 0.2 and not retained_edge:
-                return self._fail("OFF_GRAPH", "Use manual control to return within 0.2 m of a node")
+                return self._fail("OFF_GRAPH", "В ручном режиме верните робота на расстояние не более 0,2 м от узла")
             node = self.map.nodes[node_id]
             if not retained_edge:
                 if self._collision(node.x, node.y, others):
-                    return self._fail("STUCK", "The nearest node is physically occupied")
+                    return self._fail("STUCK", "Ближайший узел занят другим роботом")
                 self.x, self.y = node.x, node.y
             self.error = None
             self.current_order = None
@@ -148,34 +140,33 @@ class RobotCore:
             except ValueError as exc:
                 return self._fail("INVALID_COMMAND", str(exc))
             if self._injected_stuck:
-                return self._fail("STUCK", "Remove the injected obstacle first")
+                return self._fail("STUCK", "Сначала выключите имитацию застревания")
             self._manual = (max(-MAX_LINEAR, min(MAX_LINEAR, linear)),
                             max(-MAX_ANGULAR, min(MAX_ANGULAR, angular)))
             self._lease_until = now + MANUAL_LEASE
             self.current_order = {"command_id": command_id, "type": "manual"}
             self.edge = None
-            # Manual recovery is possible after a collision or leaving the graph.
             self.error = None
             self.status = "manual"
             return True
         if kind != "move":
-            return self._fail("INVALID_COMMAND", "Unsupported command type")
+            return self._fail("INVALID_COMMAND", "Неподдерживаемый тип команды")
         if self.error:
             return False
         path = command.get("path")
         if not isinstance(path, list) or len(path) != 2 or not all(isinstance(n, str) for n in path):
-            return self._fail("INVALID_PATH", "A move must contain [source, destination]")
+            return self._fail("INVALID_PATH", "Для перемещения нужны начальный и конечный узлы")
         if any(node_id not in self.map.nodes for node_id in path):
-            return self._fail("POINT_NOT_FOUND", "The requested node does not exist")
+            return self._fail("POINT_NOT_FOUND", "Указанный узел не существует")
         source, destination = path
         if destination not in self.map.adjacency[source]:
-            return self._fail("INVALID_PATH", "Movement is only allowed along an existing edge")
+            return self._fail("INVALID_PATH", "Движение разрешено только по существующему ребру")
         if self.map.distance_to_graph(self.x, self.y) > GRAPH_TOLERANCE:
-            return self._fail("OFF_GRAPH", "Robot is too far from the navigation graph")
+            return self._fail("OFF_GRAPH", "Робот находится слишком далеко от навигационного графа")
         source_node = self.map.nodes[source]
         resume = self.edge == (source, destination) and self._on_edge(self.edge)
         if math.hypot(self.x - source_node.x, self.y - source_node.y) > NODE_TOLERANCE and not resume:
-            return self._fail("NOT_AT_NODE", "Robot must be at the source node; recover manually")
+            return self._fail("NOT_AT_NODE", "Верните робота к начальному узлу в ручном режиме")
         self.current_order = {"command_id": command_id, "type": "move", "path": path.copy()}
         self.edge = (source, destination)
         self.last_node_id = source
@@ -184,15 +175,14 @@ class RobotCore:
         return True
 
     def _collision(self, x: float, y: float, others, padding: float = 0.0) -> str | None:
-        # A circumscribed circle safely covers the complete box during rotation.
         radius = ROBOT_RADIUS + padding
-        if (x - radius <= 0 or x + radius >= self.map.width
-                or y - radius <= 0 or y + radius >= self.map.height):
+        if (min(self.x, x) - radius <= 0 or max(self.x, x) + radius >= self.map.width
+                or min(self.y, y) - radius <= 0 or max(self.y, y) + radius >= self.map.height):
             return "COLLISION_WALL"
         for other in others:
             if other is self or other.robot_id == self.robot_id:
                 continue
-            if segment_distance(other.x, other.y, self.x, self.y, x, y) < 2 * ROBOT_RADIUS + padding - 1e-9:
+            if segment_distance(other.x, other.y, self.x, self.y, x, y) < 2 * ROBOT_RADIUS + padding + 1e-9:
                 return "COLLISION_ROBOT"
         return None
 
@@ -202,20 +192,17 @@ class RobotCore:
             x = self.x + linear * math.cos(self.yaw) * dt
             y = self.y + linear * math.sin(self.yaw) * dt
         else:
-            # Exact unicycle integration, rather than a frame-rate-dependent Euler step.
             x = self.x + linear / angular * (math.sin(next_yaw) - math.sin(self.yaw))
             y = self.y - linear / angular * (math.cos(next_yaw) - math.cos(self.yaw))
-        # Bound the tiny arc/chord deviation as well as the swept straight segment.
         collision = self._collision(x, y, others, abs(linear * angular) * dt * dt / 8)
         if collision:
-            return self._fail(collision, "Motion stopped before physical contact")
+            return self._fail(collision, "Движение остановлено перед столкновением")
         self.x, self.y = x, y
         self.yaw = angle_difference(next_yaw, 0.0)
         self.linear, self.angular = linear, angular
         return True
 
     def tick(self, dt: float, now: float, others=()) -> None:
-        """Advance at most 100 ms; split long frames so obstacles cannot be skipped."""
         if not math.isfinite(dt) or dt <= 0:
             return
         dt = min(dt, 0.1)
@@ -231,7 +218,7 @@ class RobotCore:
                 self.status = "idle"
                 self.current_order = None
                 if self.map.distance_to_graph(self.x, self.y) > GRAPH_TOLERANCE:
-                    self._fail("OFF_GRAPH", "Manual watchdog stopped a robot outside the graph")
+                    self._fail("OFF_GRAPH", "Робот вне графа остановлен: срок действия ручной команды истёк")
             return
         steps = max(1, math.ceil(dt / 0.02))
         step = dt / steps
@@ -246,6 +233,10 @@ class RobotCore:
             dx, dy = destination.x - self.x, destination.y - self.y
             distance = math.hypot(dx, dy)
             if distance <= 1e-7:
+                collision = self._collision(destination.x, destination.y, others)
+                if collision:
+                    self._fail(collision, "Доводка к узлу остановлена перед столкновением")
+                    return
                 self.x, self.y = destination.x, destination.y
                 self.last_node_id, self.edge = destination.id, None
                 self.completed_command_id = self.current_order["command_id"]
@@ -277,17 +268,14 @@ class RobotCore:
                 "last_command_seq": self._last_command_seq,
                 "completed_command_id": self.completed_command_id}
 
-
 class WorldCore:
-    """One shared clock and collision world, also usable in integration tests."""
-
     def __init__(self, map_name: str = "normal", robot_count: int = 3,
                  world_id: str = "initial"):
         self.map = load_map(map_name)
         if isinstance(robot_count, bool) or not isinstance(robot_count, int) or not 1 <= robot_count <= len(self.map.parking_nodes):
-            raise ValueError("robot count must be between one and the number of parking nodes")
+            raise ValueError("Число роботов должно быть от одного до числа парковок на карте")
         if not isinstance(world_id, str) or not world_id or len(world_id) > 128:
-            raise ValueError("world_id must be a nonempty string of at most 128 characters")
+            raise ValueError("Идентификатор симуляции должен быть непустой строкой длиной до 128 символов")
         self.world_id = world_id
         self._reset_seq = 0
         self.robots = {f"robot{index + 1}": RobotCore(f"robot{index + 1}", self.map, node_id)

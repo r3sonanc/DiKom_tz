@@ -4,7 +4,6 @@ import unittest
 from warehouse.map import load_map
 from warehouse.robot import MANUAL_LEASE, MOVE_LEASE, ROBOT_RADIUS, RobotCore, WorldCore
 
-
 class RobotTests(unittest.TestCase):
     def setUp(self):
         self.robot = RobotCore("robot1", load_map(), "p1")
@@ -156,7 +155,6 @@ class RobotTests(unittest.TestCase):
         self.assertEqual(first["boot_id"], second["boot_id"])
         self.assertAlmostEqual(first["velocity"]["left_wheel"], 2.5)
         self.assertAlmostEqual(first["velocity"]["right_wheel"], 7.5)
-
 
 class WorldTests(unittest.TestCase):
     def test_reset_is_idempotent_and_rejects_old_world(self):

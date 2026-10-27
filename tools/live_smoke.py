@@ -2,11 +2,14 @@
 
 import argparse
 import json
+import platform
 from pathlib import Path
 import subprocess
 import time
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+
+from websockets.sync.client import connect
 
 
 def main():
@@ -49,9 +52,22 @@ def main():
 
     call("/api/reset", {"map": "normal", "robots": 2})
     wait(lambda s: len(s["robots"]) == 2 and all(r["connected"] for r in s["robots"]))
-    command("move", target="r1c5")
-    wait(lambda s: robot(s)["node_id"] == "r1c5" and not s["dispatcher"]["goals"])
+    socket_url = args.url.replace("http://", "ws://", 1).replace("https://", "wss://", 1)
+    with connect(socket_url + "/ws", open_timeout=5) as first, connect(
+            socket_url + "/ws", open_timeout=5) as second:
+        initial = json.loads(first.recv(timeout=5))
+        command("move", target="r1c5")
+        for socket in (first, second):
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                snapshot = json.loads(socket.recv(timeout=5))
+                assert snapshot["world_id"] == initial["world_id"]
+                if robot(snapshot)["node_id"] == "r1c5" and not snapshot["dispatcher"]["goals"]:
+                    break
+            else:
+                raise AssertionError("A WebSocket observer did not receive arrival")
     results.append("HTTP -> dispatcher -> ROS -> physics -> telemetry: move completed")
+    results.append("two independent WebSocket observers received the completed movement")
 
     command("move", target="r2c4")
     wait(lambda s: robot(s)["node_id"] is None)
@@ -97,7 +113,10 @@ def main():
     results.append("hardcore map, five robots, dark-factory tasks completed")
     call("/api/reset", {"map": "normal", "robots": 3})
     wait(lambda s: len(s["robots"]) == 3 and all(r["connected"] for r in s["robots"]))
-    report = {"ok": True, "checks": results, "url": args.url}
+    release = Path("/etc/os-release")
+    report = {"ok": True, "checks": results, "url": args.url,
+              "python": platform.python_version(), "platform": platform.platform(),
+              "os_release": release.read_text() if release.exists() else None}
     output = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output:
         path = Path(args.output)

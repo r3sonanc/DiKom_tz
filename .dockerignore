@@ -7,6 +7,5 @@ __pycache__
 build
 install
 log
-versions
-artifacts
 *.egg-info
+docs/commented

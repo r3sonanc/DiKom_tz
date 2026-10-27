@@ -1,5 +1,3 @@
-"""ROS 2 Jazzy adapter: one physics world, individual robot telemetry on DDS."""
-
 import json
 import os
 import time
@@ -12,7 +10,6 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from std_msgs.msg import String
 
 from warehouse.robot import WorldCore
-
 
 class SimulatorNode(Node):
     def __init__(self):
@@ -35,19 +32,18 @@ class SimulatorNode(Node):
         self._subscription = self.create_subscription(
             String, "/warehouse/commands", self._command, commands_qos)
         self._last_tick = time.monotonic()
-        # Single-threaded executor serializes all physics and command mutations.
         self._timer = self.create_timer(0.02, self._tick)
-        self.get_logger().info("Warehouse simulator ready (50 Hz physics, 10 Hz telemetry)")
+        self.get_logger().info("Симулятор готов: физика — 50 Гц, телеметрия — 10 Гц")
 
     def _command(self, message: String) -> None:
         if len(message.data) > 16384:
-            self.get_logger().warning("Rejected oversized command")
+            self.get_logger().warning("Слишком большая команда отклонена")
             return
         try:
             payload = json.loads(message.data)
             self.world.command(payload, time.monotonic())
         except (ValueError, TypeError, KeyError, OverflowError) as exc:
-            self.get_logger().warning(f"Rejected malformed command: {exc}")
+            self.get_logger().warning(f"Некорректная команда отклонена: {exc}")
 
     def _tick(self) -> None:
         now = time.monotonic()
@@ -55,7 +51,6 @@ class SimulatorNode(Node):
         self.world.tick(dt, now)
         for state in self.world.telemetry(now):
             self._publisher.publish(String(data=json.dumps(state, allow_nan=False)))
-
 
 def main(args=None) -> None:
     rclpy.init(args=args)
@@ -70,7 +65,6 @@ def main(args=None) -> None:
             node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()

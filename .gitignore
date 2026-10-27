@@ -8,6 +8,3 @@ build/
 install/
 log/
 *.egg-info/
-versions/
-artifacts/*.zip
-artifacts/*.png

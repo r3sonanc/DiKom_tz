@@ -1,9 +1,6 @@
-"""ROS is the transport boundary; the dispatcher itself has no ROS dependency."""
-
 import json
 import threading
 from collections import OrderedDict
-
 
 class RosTransport:
     def __init__(self):
@@ -15,7 +12,6 @@ class RosTransport:
         self._thread = None
 
     def start(self):
-        # Delayed imports let ordinary unit tests run without a ROS installation.
         import rclpy
         from rclpy.context import Context
         from rclpy.duration import Duration
@@ -48,11 +44,10 @@ class RosTransport:
             if robot_id not in {"robot1", "robot2", "robot3", "robot4", "robot5"}:
                 return
             with self._lock:
-                # A mailbox, rather than a FIFO: old telemetry cannot accumulate.
                 self._latest[robot_id] = state
         except (ValueError, KeyError, TypeError):
             if self._node:
-                self._node.get_logger().warning("Ignored malformed robot telemetry")
+                self._node.get_logger().warning("Некорректная телеметрия робота отклонена")
 
     def receive(self):
         with self._lock:

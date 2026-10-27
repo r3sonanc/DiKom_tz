@@ -1,13 +1,8 @@
-"""The two warehouse graphs from the assignment, in metres (Cartesian axes)."""
-
 from dataclasses import asdict, dataclass
 import math
 
-
 def edge_key(a: str, b: str) -> tuple[str, str]:
-    """One reservation key for both directions of an undirected edge."""
     return (a, b) if a <= b else (b, a)
-
 
 def segment_distance(x: float, y: float, ax: float, ay: float,
                      bx: float, by: float) -> float:
@@ -18,14 +13,12 @@ def segment_distance(x: float, y: float, ax: float, ay: float,
     )
     return math.hypot(x - ax - t * dx, y - ay - t * dy)
 
-
 @dataclass(frozen=True, slots=True)
 class Node:
     id: str
     x: float
     y: float
     parking: bool = False
-
 
 @dataclass(frozen=True, slots=True)
 class WarehouseMap:
@@ -61,11 +54,9 @@ class WarehouseMap:
                 "edges": [list(edge) for edge in self.edges],
                 "walls": [list(wall) for wall in self.walls]}
 
-
 def load_map(name: str = "normal") -> WarehouseMap:
-    """Explicit rows preserve missing edges in the ASCII specification."""
     if name not in {"normal", "hardcore"}:
-        raise ValueError("map must be 'normal' or 'hardcore'")
+        raise ValueError("Выберите карту: обычный склад или узкие коридоры")
     nodes: dict[str, Node] = {}
     edges: set[tuple[str, str]] = set()
 

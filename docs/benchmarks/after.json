@@ -1,0 +1,118 @@
+{
+  "python": "3.12.3",
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "simulation_seconds": 600.0,
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "repeats": 3,
+  "memory_scope": "tracemalloc Python allocations, not process RSS/container/DDS",
+  "core_memory_scope": "tracing starts before WorldCore/Dispatcher creation; includes the direct-transport harness",
+  "snapshot_memory_scope": "tracing starts after make_runtime; excludes retained graph/state/map initialization; includes per-frame/cache allocations and timings list",
+  "core_transport": "direct in-memory commands and states, without ROS/DDS/HTTP",
+  "snapshots": "sequential virtual clients at one shared frame timestamp; excludes network I/O",
+  "serialization": "cached",
+  "core": [
+    {
+      "map": "normal",
+      "robots": 3,
+      "seed": 0,
+      "seconds_p50": 0.358852,
+      "seconds_p95": 0.365091,
+      "python_peak_kib": 145.793,
+      "completed_tasks": 55,
+      "planning_failures": 0,
+      "errors": []
+    },
+    {
+      "map": "normal",
+      "robots": 3,
+      "seed": 1,
+      "seconds_p50": 0.346092,
+      "seconds_p95": 0.359634,
+      "python_peak_kib": 292.834,
+      "completed_tasks": 50,
+      "planning_failures": 0,
+      "errors": []
+    },
+    {
+      "map": "normal",
+      "robots": 3,
+      "seed": 2,
+      "seconds_p50": 0.351689,
+      "seconds_p95": 0.35435,
+      "python_peak_kib": 344.408,
+      "completed_tasks": 54,
+      "planning_failures": 0,
+      "errors": []
+    },
+    {
+      "map": "hardcore",
+      "robots": 5,
+      "seed": 0,
+      "seconds_p50": 0.687358,
+      "seconds_p95": 0.69094,
+      "python_peak_kib": 164.681,
+      "completed_tasks": 37,
+      "planning_failures": 0,
+      "errors": []
+    },
+    {
+      "map": "hardcore",
+      "robots": 5,
+      "seed": 1,
+      "seconds_p50": 0.498849,
+      "seconds_p95": 0.505914,
+      "python_peak_kib": 156.069,
+      "completed_tasks": 39,
+      "planning_failures": 0,
+      "errors": []
+    },
+    {
+      "map": "hardcore",
+      "robots": 5,
+      "seed": 2,
+      "seconds_p50": 0.708124,
+      "seconds_p95": 0.739864,
+      "python_peak_kib": 159.736,
+      "completed_tasks": 31,
+      "planning_failures": 1,
+      "errors": []
+    }
+  ],
+  "snapshot": [
+    {
+      "map": "normal",
+      "robots": 3,
+      "clients": 1,
+      "rounds": 200,
+      "frame_ms_p50": 0.050656,
+      "frame_ms_p95": 0.069692,
+      "python_peak_kib": 43.187,
+      "payload_characters": 4013
+    },
+    {
+      "map": "normal",
+      "robots": 3,
+      "clients": 10,
+      "rounds": 200,
+      "frame_ms_p50": 0.05281,
+      "frame_ms_p95": 0.080132,
+      "python_peak_kib": 30.321,
+      "payload_characters": 4013
+    },
+    {
+      "map": "normal",
+      "robots": 3,
+      "clients": 50,
+      "rounds": 200,
+      "frame_ms_p50": 0.060459,
+      "frame_ms_p95": 0.111802,
+      "python_peak_kib": 30.272,
+      "payload_characters": 4013
+    }
+  ],
+  "core_profile": "         6251220 function calls (6243660 primitive calls) in 1.741 seconds\n\n   Ordered by: cumulative time\n   List reduced from 96 to 18 due to restriction <18>\n\n   ncalls  tottime  percall  cumtime  percall filename:lineno(function)\n        1    0.036    0.036    1.741    1.741 benchmark.py:35(simulate)\n    30000    0.054    0.000    0.745    0.000 robot.py:328(tick)\n   150000    0.153    0.000    0.674    0.000 robot.py:205(tick)\n     6000    0.021    0.000    0.576    0.000 dispatcher.py:244(tick)\n       35    0.000    0.000    0.543    0.016 dispatcher.py:340(_build_schedule)\n       35    0.008    0.000    0.537    0.015 dispatcher.py:41(plan)\n      926    0.288    0.000    0.527    0.001 dispatcher.py:80(_search)\n    57240    0.070    0.000    0.425    0.000 robot.py:189(_integrate)\n    57599    0.104    0.000    0.324    0.000 robot.py:177(_collision)\n797943/790383    0.171    0.000    0.283    0.000 {built-in method builtins.min}\n     6000    0.016    0.000    0.249    0.000 robot.py:342(telemetry)\n    23315    0.013    0.000    0.229    0.000 robot.py:332(_state)\n    23315    0.026    0.000    0.214    0.000 robot.py:256(telemetry)\n   237956    0.109    0.000    0.189    0.000 map.py:7(segment_distance)\n    23315    0.008    0.000    0.188    0.000 robot.py:57(node_id)\n    23315    0.014    0.000    0.180    0.000 map.py:42(nearest_node)\n   466300    0.064    0.000    0.104    0.000 map.py:43(<lambda>)\n   224314    0.056    0.000    0.096    0.000 dispatcher.py:38(distance)\n\n\n"
+}

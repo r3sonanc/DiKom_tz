@@ -1,6 +1,6 @@
-"""FastAPI adapter: one event loop owns all mutable dispatch state."""
-
 import asyncio
+import copy
+import json
 import logging
 import os
 import time
@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,11 +23,18 @@ from warehouse.transport import RosTransport
 
 LOG = logging.getLogger(__name__)
 STATIC = Path(__file__).with_name("static")
-
+SNAPSHOT_PERIOD = 0.1
+MAP_NAMES = {"normal": "обычный склад", "hardcore": "узкие коридоры"}
+COMMAND_NAMES = {
+    "move": "перемещение", "park": "возврат на парковку", "stop": "остановка парка",
+    "resume": "возобновление движения", "clear_error": "сброс ошибки",
+}
+FAULT_NAMES = {
+    "stuck": "застревание", "link_lost": "потеря связи", "throttle": "замедление связи",
+}
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
-
 
 class Command(StrictModel):
     type: Literal["move", "park", "stop", "manual", "resume", "clear_error"]
@@ -34,21 +42,17 @@ class Command(StrictModel):
     linear: float = Field(default=0, ge=-0.8, le=0.8)
     angular: float = Field(default=0, ge=-1.5, le=1.5)
 
-
 class Reset(StrictModel):
     map: Literal["normal", "hardcore"] = "normal"
     robots: int = Field(default=3, ge=1, le=5)
 
-
 class DarkFactory(StrictModel):
     enabled: bool
-
 
 class Fault(StrictModel):
     stuck: bool | None = None
     link_lost: bool | None = None
     throttle: bool | None = None
-
 
 class FleetRuntime:
     def __init__(self, transport, map_name="normal", robots=3):
@@ -58,19 +62,29 @@ class FleetRuntime:
         self.tick_count = 0
         self.tick_seconds = 0.0
         self.last_received = 0.0
+        self._snapshot_cache_key = None
+        self._snapshot_cache = None
         self.reset(map_name, robots)
+
+    def invalidate_snapshot(self):
+        self._snapshot_cache_key = None
+        self._snapshot_cache = None
 
     def event(self, message, level="info"):
         self.events.append(
             {"time": datetime.now(timezone.utc).isoformat(), "level": level, "message": message}
         )
+        LOG.log({"info": logging.INFO, "warning": logging.WARNING,
+                 "error": logging.ERROR}.get(level, logging.INFO), message)
+        self.invalidate_snapshot()
 
     def reset(self, map_name, robots):
         graph = load_map(map_name)
         parking = [node.id for node in graph.nodes.values() if node.parking]
         if not 1 <= robots <= len(parking):
-            raise ValueError(f"На карте {map_name} доступно парковок: {len(parking)}")
+            raise ValueError(f"На карте «{MAP_NAMES[map_name]}» доступно парковок: {len(parking)}")
         self.graph = graph
+        self._map_snapshot = graph.to_dict()
         self.robot_ids = [f"robot{i + 1}" for i in range(robots)]
         self.dispatcher = Dispatcher(graph, self.robot_ids)
         self.world_id = uuid.uuid4().hex
@@ -83,7 +97,7 @@ class FleetRuntime:
         self._last_reset = float("-inf")
         self._reset_pending = True
         self._dark = False
-        self.event(f"Новая симуляция: {map_name}, роботов: {robots}")
+        self.event(f"Новая симуляция: {MAP_NAMES[map_name]}, роботов: {robots}")
 
     def send(self, command):
         self.transport.send({**command, "world_id": self.world_id})
@@ -103,7 +117,9 @@ class FleetRuntime:
             if not self.dispatcher.ingest(state, now):
                 continue
             if state.get("error") != (previous or {}).get("error") and state.get("error"):
-                self.event(f"{robot_id}: {state['error']}", "error")
+                error = state["error"]
+                message = error.get("message", "Ошибка робота") if isinstance(error, dict) else "Ошибка робота"
+                self.event(f"Робот {robot_id.removeprefix('robot')}: {message}", "error")
             self.raw_states[robot_id] = state
             self.last_received = now
         if len(self.raw_states) == len(self.robot_ids):
@@ -118,6 +134,7 @@ class FleetRuntime:
             self.send(command)
         self.tick_count += 1
         self.tick_seconds = time.perf_counter() - start
+        self.invalidate_snapshot()
 
     async def run(self):
         self.running = True
@@ -129,9 +146,28 @@ class FleetRuntime:
             self.running = False
 
     def snapshot(self, now=None):
+        return copy.deepcopy(self._snapshot(now))
+
+    def snapshot_json(self, now=None):
+        now = time.monotonic() if now is None else now
+        key = int(now / SNAPSHOT_PERIOD)
+        if self._snapshot_cache_key != key:
+            self._snapshot_cache = json.dumps(
+                self._snapshot(now), ensure_ascii=False, separators=(",", ":"), allow_nan=False
+            )
+            self._snapshot_cache_key = key
+        return self._snapshot_cache
+
+    def metrics_snapshot(self):
+        return {
+            **self.dispatcher.metrics,
+            "controller_ticks": self.tick_count,
+            "controller_tick_ms": round(self.tick_seconds * 1000, 3),
+        }
+
+    def _snapshot(self, now=None):
         now = time.monotonic() if now is None else now
         dispatch = self.dispatcher.snapshot(now)
-        # The adapter keeps the public browser contract independent of telemetry.
         entries = dispatch.get("robots", [])
         if isinstance(entries, dict):
             entries = [{"id": key, **value} for key, value in entries.items()]
@@ -175,24 +211,18 @@ class FleetRuntime:
                     "fault": self.faults[robot_id],
                 }
             )
-        metrics = {
-            **dispatch.get("metrics", {}),
-            "controller_ticks": self.tick_count,
-            "controller_tick_ms": round(self.tick_seconds * 1000, 3),
-        }
         return {
             "type": "snapshot",
             "revision": self.tick_count,
             "time": datetime.now(timezone.utc).isoformat(),
             "world_id": self.world_id,
-            "map": self.graph.to_dict(),
+            "map": self._map_snapshot,
             "robots": robots,
             "dark_factory": self._dark,
-            "metrics": metrics,
+            "metrics": self.metrics_snapshot(),
             "events": list(self.events),
             "dispatcher": {key: value for key, value in dispatch.items() if key != "robots"},
         }
-
 
 def create_app(transport=None, map_name=None, robots=None):
     transport = RosTransport() if transport is None else transport
@@ -218,6 +248,45 @@ def create_app(transport=None, map_name=None, robots=None):
 
     app = FastAPI(title="DiKom · Симуляция склада", version="1.0.0", lifespan=lifespan)
     app.state.runtime = runtime
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request, exc):
+        names = {
+            "map": "Карта", "robots": "Число роботов", "type": "Команда",
+            "target": "Точка назначения", "linear": "Линейная скорость",
+            "angular": "Угловая скорость", "enabled": "Состояние режима",
+            "stuck": "Застревание", "link_lost": "Потеря связи",
+            "throttle": "Замедление связи",
+        }
+        messages = {
+            "missing": "обязательное поле",
+            "extra_forbidden": "неизвестное поле",
+            "literal_error": "выберите одно из допустимых значений",
+            "int_type": "нужно целое число", "int_parsing": "нужно целое число",
+            "int_from_float": "нужно целое число",
+            "float_type": "нужно число", "float_parsing": "нужно число",
+            "bool_type": "нужно значение «да» или «нет»",
+            "bool_parsing": "нужно значение «да» или «нет»",
+            "string_type": "нужна строка", "string_too_long": "слишком длинная строка",
+            "finite_number": "нужно конечное число",
+            "json_invalid": "некорректный формат JSON",
+            "model_attributes_type": "нужен объект с параметрами",
+        }
+        details = []
+        for error in exc.errors():
+            location = error.get("loc", ())
+            field = location[-1] if location and isinstance(location[-1], str) else "body"
+            label = names.get(field, "Запрос" if field == "body" else "Поле запроса")
+            kind = error["type"]
+            context = error.get("ctx", {})
+            if kind == "greater_than_equal":
+                message = f"значение должно быть не меньше {context['ge']}"
+            elif kind == "less_than_equal":
+                message = f"значение должно быть не больше {context['le']}"
+            else:
+                message = messages.get(kind, "некорректное значение")
+            details.append({"loc": list(location), "msg": f"{label}: {message}", "type": kind})
+        return JSONResponse(status_code=422, content={"detail": details})
 
     @app.get("/")
     def index():
@@ -249,9 +318,9 @@ def create_app(transport=None, map_name=None, robots=None):
         if robot_id not in runtime.robot_ids:
             raise HTTPException(404, "Робот не найден")
         if runtime._reset_pending:
-            raise HTTPException(409, "Ожидаем начальную телеметрию ROS2")
+            raise HTTPException(409, "Ожидаем начальную телеметрию роботов")
         if request.type == "move" and not request.target:
-            raise HTTPException(422, "Для перемещения нужен target")
+            raise HTTPException(422, "Для перемещения выберите точку назначения")
         try:
             result = runtime.dispatcher.submit(
                 robot_id,
@@ -261,10 +330,14 @@ def create_app(transport=None, map_name=None, robots=None):
                 angular=request.angular,
                 now=time.monotonic(),
             )
+            runtime.invalidate_snapshot()
         except (ValueError, KeyError) as exc:
             raise HTTPException(409, str(exc)) from exc
         if request.type != "manual":
-            runtime.event(f"{robot_id}: {request.type} {request.target or ''}".strip())
+            action = COMMAND_NAMES[request.type]
+            if request.type == "move":
+                action += f" к узлу {request.target}"
+            runtime.event(f"Робот {robot_id.removeprefix('robot')}: {action}")
         return {"ok": True, "result": result}
 
     @app.post("/api/robots/{robot_id}/faults")
@@ -273,8 +346,14 @@ def create_app(transport=None, map_name=None, robots=None):
             raise HTTPException(404, "Робот не найден")
         changes = request.model_dump(exclude_none=True)
         runtime.faults[robot_id].update(changes)
+        runtime.invalidate_snapshot()
         runtime.send({"type": "fault", "robot_id": robot_id, **runtime.faults[robot_id]})
-        runtime.event(f"{robot_id}: имитация неисправности {changes}", "warning")
+        if changes:
+            description = "; ".join(
+                f"{FAULT_NAMES[name]} — {'включено' if enabled else 'выключено'}"
+                for name, enabled in changes.items()
+            )
+            runtime.event(f"Робот {robot_id.removeprefix('robot')}: {description}", "warning")
         return {"ok": True}
 
     @app.post("/api/dark-factory")
@@ -286,7 +365,7 @@ def create_app(transport=None, map_name=None, robots=None):
 
     @app.get("/metrics", response_class=PlainTextResponse)
     async def metrics():
-        values = runtime.snapshot()["metrics"]
+        values = runtime.metrics_snapshot()
         lines = []
         for key, value in values.items():
             if isinstance(value, (int, float)):
@@ -299,7 +378,7 @@ def create_app(transport=None, map_name=None, robots=None):
         await socket.accept()
         try:
             while True:
-                await asyncio.wait_for(socket.send_json(runtime.snapshot()), timeout=2)
+                await asyncio.wait_for(socket.send_text(runtime.snapshot_json()), timeout=2)
                 await asyncio.sleep(0.2)
         except (WebSocketDisconnect, asyncio.TimeoutError, RuntimeError):
             pass
@@ -307,12 +386,13 @@ def create_app(transport=None, map_name=None, robots=None):
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app
 
-
 def main(args=None):
     import uvicorn
 
-    uvicorn.run(create_app(), host="0.0.0.0", port=int(os.getenv("WAREHOUSE_PORT", "8000")))
-
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    port = int(os.getenv("WAREHOUSE_PORT", "8000"))
+    LOG.info("Запуск веб-интерфейса: http://localhost:%s", port)
+    uvicorn.run(create_app(), host="0.0.0.0", port=port, log_level="warning", access_log=False)
 
 if __name__ == "__main__":
     main()
