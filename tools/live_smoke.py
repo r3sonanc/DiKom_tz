@@ -20,13 +20,16 @@ def main():
     args = parser.parse_args()
     results = []
 
-    def call(path, payload=None):
+    def call(path, payload=None, expected_status=200):
         data = json.dumps(payload).encode() if payload is not None else None
         request = Request(args.url + path, data, headers={"Content-Type": "application/json"})
         try:
             with urlopen(request, timeout=5) as response:
+                assert response.status == expected_status, (path, response.status, expected_status)
                 return json.load(response)
         except HTTPError as exc:
+            if exc.code == expected_status:
+                return json.load(exc)
             raise AssertionError(f"{path}: HTTP {exc.code}, {exc.read().decode()}") from exc
 
     def wait(predicate, timeout=30):
@@ -72,16 +75,28 @@ def main():
     command("move", target="r2c4")
     wait(lambda s: robot(s)["node_id"] is None)
     call("/api/robots/robot1/faults", {"link_lost": True})
-    wait(lambda s: not robot(s)["connected"])
+    unavailable = wait(lambda s: not robot(s)["connected"] and s["dispatcher"]["safety_stop"])
+    assert robot(unavailable)["link_state"] == "OFFLINE"
+    assert robot(unavailable)["position_stale"]
+    retained = set(unavailable["dispatcher"]["reservations"]["robot1"])
+    assert len(retained) == 2
+    partial_health = call("/api/health")
+    assert partial_health["ok"] and partial_health["fleet"]["offline"] == 1
+    assert partial_health["fleet"]["safety_stop"]
+    assert unavailable["metrics"]["link_loss_events_total"] == 1
+    assert unavailable["metrics"]["fleet_safety_stops_total"] == 1
     command("stop")
     time.sleep(1)
     call("/api/robots/robot1/faults", {"link_lost": False})
     stopped = wait(lambda s: robot(s)["connected"] and abs(robot(s)["v"]) < 0.001)
     assert stopped["dispatcher"]["paused"]
     assert stopped["dispatcher"]["reservations"]["robot1"]
+    assert retained <= set(stopped["dispatcher"]["reservations"]["robot1"])
+    assert stopped["metrics"]["link_recovery_events_total"] == 1
     command("resume")
     wait(lambda s: robot(s)["node_id"] == "r2c4" and not s["dispatcher"]["goals"])
     results.append("bidirectional link loss, safe pause, retained edge, recovery")
+    results.append("partial fleet loss preserves service HTTP 200 and counts one loss/recovery episode")
 
     call("/api/robots/robot1/faults", {"stuck": True})
     wait(lambda s: (robot(s)["error"] or {}).get("code") == "STUCK")
@@ -105,6 +120,18 @@ def main():
     wait(lambda s: robot(s)["last_seen"] is not None and robot(s)["last_seen"] < 0.3)
     results.append("throttled telemetry and restoration")
 
+    events_before_reset = {event["code"] for event in call("/api/state")["events"]}
+    assert {"LINK_LOST", "LINK_RECOVERED", "FLEET_SAFETY_STOP", "FLEET_RESUMED",
+            "ROBOT_ERROR", "ERROR_CLEARED"} <= events_before_reset
+    for robot_id in ("robot1", "robot2"):
+        call(f"/api/robots/{robot_id}/faults", {"link_lost": True})
+    wait(lambda s: all(not entry["connected"] and entry["last_seen"] > 3.05 for entry in s["robots"]))
+    all_offline_health = call("/api/health", expected_status=503)
+    assert not all_offline_health["ok"] and all_offline_health["fleet"]["offline"] == 2
+    with connect(socket_url + "/ws", open_timeout=5) as observer:
+        assert all(not entry["connected"] for entry in json.loads(observer.recv(timeout=5))["robots"])
+    results.append("all robot telemetry lost: service HTTP 503 while WebSocket remains observable")
+
     call("/api/reset", {"map": "hardcore", "robots": 5})
     wait(lambda s: len(s["robots"]) == 5 and all(r["connected"] for r in s["robots"]))
     call("/api/dark-factory", {"enabled": True})
@@ -116,7 +143,10 @@ def main():
     release = Path("/etc/os-release")
     report = {"ok": True, "checks": results, "url": args.url,
               "python": platform.python_version(), "platform": platform.platform(),
-              "os_release": release.read_text() if release.exists() else None}
+              "os_release": release.read_text() if release.exists() else None,
+              "observability": {"partial_loss_health": partial_health,
+                                "all_offline_health": all_offline_health,
+                                "event_codes": sorted(events_before_reset)}}
     output = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output:
         path = Path(args.output)

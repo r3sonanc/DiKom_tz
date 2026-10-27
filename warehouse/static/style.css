@@ -101,6 +101,13 @@ a{
 .status-dot.error{
   background:#e9656c
 }
+.status-dot.offline{
+  background:#91a0b3
+}
+.status-dot.recovering{
+  background:#b7832d;
+  box-shadow:0 0 0 3px #b7832d14
+}
 .workspace{
   max-width:1660px;
   margin:0 auto;
@@ -522,6 +529,11 @@ canvas:active{
   font-weight:600;
   font-variant-numeric:tabular-nums
 }
+.position-stale{
+  color:#7b899a;
+  text-decoration:underline dotted;
+  text-underline-offset:3px
+}
 .order-line{
   margin:16px 0;
   display:flex;
@@ -763,12 +775,27 @@ td{
   color:#438b74;
   background:#edf7f3
 }
+.state-badge.offline{
+  color:#738195;
+  background:#eef1f5
+}
+.state-badge.recovering{
+  color:#956b25;
+  background:#fff4df
+}
+.state-badge.paused{
+  color:#68778a;
+  background:#edf0f4
+}
 .link-cell{
   color:#5e947e;
   font-size:14px
 }
 .link-cell.lost{
   color:#cb6871
+}
+.link-cell.recovering{
+  color:#956b25
 }
 .table-empty{
   text-align:center;

@@ -6,7 +6,11 @@ from heapq import heappop, heappush
 from itertools import permutations
 import math
 import random
+import time
 from typing import Any
+
+from warehouse.map import segment_distance
+from warehouse.robot import NODE_TOLERANCE, ROBOT_RADIUS
 
 @dataclass
 class RobotRecord:
@@ -15,6 +19,11 @@ class RobotRecord:
     seq: int = -1
     boot_id: str | None = None
     retired_boots: set[str] = field(default_factory=set)
+    link_state: str = "OFFLINE"
+    recovery_reason: str = "Ожидание первой телеметрии"
+    protected_resources: set[str] = field(default_factory=set)
+    protected_command: dict[str, Any] | None = None
+    reboot_pending: bool = False
 
 class CooperativePlanner:
     def __init__(self, warehouse_map: Any, max_expansions: int = 300_000):
@@ -149,9 +158,153 @@ class Dispatcher:
         self._frozen = False
         self._last_plan_signature: Any = None
         self._last_plan_at = -math.inf
+        self._last_now = 0.0
+        self._safety_stop = False
+        self._confirmed_arrivals: set[str] = set()
+        self._events = deque(maxlen=256)
+        self._last_planning_failure: str | None = None
         self.metrics = {"accepted_telemetry": 0, "discarded_telemetry": 0,
                         "commands": 0, "completed_moves": 0, "plans": 0,
-                        "planning_failures": 0, "completed_tasks": 0, "staged_plans": 0}
+                        "planning_failures": 0, "completed_tasks": 0, "staged_plans": 0,
+                        "link_loss_events_total": 0, "link_recovery_events_total": 0,
+                        "fleet_safety_stops_total": 0, "robot_errors_total": 0,
+                        "planning_duration_seconds": 0.0,
+                        "planning_duration_seconds_sum": 0.0,
+                        "planning_duration_seconds_count": 0}
+
+    def _emit(self, code: str, robot_id: str | None, reason: str, level: str = "info") -> None:
+        self._events.append({"code": code, "robot_id": robot_id,
+                             "reason": str(reason), "level": level})
+
+    def drain_events(self) -> list[dict[str, Any]]:
+        events = list(self._events)
+        self._events.clear()
+        return events
+
+    def _protect(self, robot_id: str) -> None:
+        record = self.robots[robot_id]
+        record.protected_resources.update(self._resources(robot_id))
+        command = self._round.get(robot_id) or self._held.get(robot_id)
+        if command is not None:
+            record.protected_command = dict(command)
+
+    def _enter_safety_stop(self, robot_id: str | None, reason: str) -> None:
+        if not self._safety_stop:
+            self._safety_stop = True
+            self.metrics["fleet_safety_stops_total"] += 1
+            self._emit("FLEET_SAFETY_STOP", robot_id, reason, "warning")
+        self._frozen = True
+
+    def _mark_offline(self, robot_id: str) -> None:
+        record = self.robots[robot_id]
+        if record.boot_id is None or record.link_state == "OFFLINE":
+            return
+        self._protect(robot_id)
+        record.link_state = "OFFLINE"
+        record.recovery_reason = "Нет свежей телеметрии; последнее положение не подтверждено"
+        self.metrics["link_loss_events_total"] += 1
+        self._emit("LINK_LOST", robot_id, "telemetry timeout", "warning")
+        self._enter_safety_stop(robot_id, "telemetry timeout")
+
+    def _recovery_problem(self, robot_id: str, now: float, operator: bool = False) -> str | None:
+        record = self.robots[robot_id]
+        state = record.state
+        manual_repair = self.paused and self._manual_robot == robot_id and not record.reboot_pending
+        if now - record.received_at > self.heartbeat_timeout:
+            return "Нет свежей телеметрии"
+        error = state.get("error")
+        repair_error = manual_repair and isinstance(error, dict) and error.get("code") == "OFF_GRAPH"
+        if error and not repair_error:
+            return "Ошибка робота ещё не сброшена"
+        if not self._stationary(state):
+            return "Ожидание подтверждения остановки робота"
+        node = state.get("node_id")
+        edge = state.get("edge")
+        if node is not None and (not isinstance(node, str) or node not in self.map.nodes):
+            return "Неизвестный навигационный узел"
+        if edge is not None and (not isinstance(edge, (list, tuple)) or len(edge) != 2
+                or not all(isinstance(n, str) and n in self.map.nodes for n in edge)
+                or edge[1] not in self.map.adjacency[edge[0]]):
+            return "Некорректное ребро робота"
+        pending = record.protected_command or self._round.get(robot_id) or self._held.get(robot_id)
+        relocating = manual_repair or operator and record.reboot_pending and node in self.map.nodes
+        if node is None and not manual_repair and (
+                pending is None or tuple(edge or ()) != tuple(pending["path"])):
+            return "Положение не подтверждено на последнем разрешённом ребре"
+        if edge and pending and tuple(edge) != tuple(pending["path"]):
+            return "Робот сообщает другое активное ребро"
+        if record.protected_resources and node and node not in record.protected_resources and not relocating:
+            return "Узел не принадлежит последнему разрешённому участку"
+        active = state.get("current_order")
+        manual_order = manual_repair and isinstance(active, dict) and active.get("type") == "manual"
+        if active is not None and not manual_order:
+            if not isinstance(active, dict) or pending is None:
+                return "Активный приказ не подтверждён диспетчером"
+            if (active.get("type") != "move" or active.get("command_id") != pending["command_id"]
+                    or active.get("path") != pending["path"]):
+                return "Активный приказ не совпадает с разрешённым переходом"
+        if active is not None and not manual_order and edge is None:
+            return "Активный переход не содержит подтверждённого ребра"
+        pose = state.get("pose")
+        if manual_repair and node is None and "pose" not in state:
+            return "Ручное восстановление требует подтверждённых координат"
+        if "pose" in state:
+            if not isinstance(pose, dict) or not all(
+                    isinstance(pose.get(key), (int, float)) and not isinstance(pose.get(key), bool)
+                    and math.isfinite(pose[key]) for key in ("x", "y", "yaw")):
+                return "Некорректные координаты робота"
+            x, y = pose["x"], pose["y"]
+            if not (ROBOT_RADIUS < x < self.map.width - ROBOT_RADIUS
+                    and ROBOT_RADIUS < y < self.map.height - ROBOT_RADIUS):
+                return "Корпус робота выходит за границы склада"
+            if node:
+                expected = self.map.nodes[node]
+                if math.hypot(x - expected.x, y - expected.y) > NODE_TOLERANCE:
+                    return "Координаты не совпадают с заявленным узлом"
+            if edge:
+                source, target = (self.map.nodes[n] for n in edge)
+                if segment_distance(x, y, source.x, source.y, target.x, target.y) > NODE_TOLERANCE:
+                    return "Координаты не совпадают с заявленным ребром"
+            for rid, other in self.robots.items():
+                other_pose = other.state.get("pose")
+                if rid != robot_id and isinstance(other_pose, dict):
+                    ox, oy = other_pose.get("x"), other_pose.get("y")
+                    if (isinstance(ox, (int, float)) and isinstance(oy, (int, float))
+                            and math.isfinite(ox) and math.isfinite(oy)
+                            and math.hypot(x - ox, y - oy) < 2 * ROBOT_RADIUS):
+                        return "Положение конфликтует с последним положением другого робота"
+        if node and node in self._occupied_by_others(robot_id):
+            return "Заявленный узел зарезервирован другим роботом"
+        return None
+
+    def _confirm_recovery(self, robot_id: str) -> None:
+        record = self.robots[robot_id]
+        pending = record.protected_command or self._round.get(robot_id)
+        if pending and record.state.get("node_id") == pending["path"][-1]:
+            self._confirmed_arrivals.add(robot_id)
+        record.link_state = "ONLINE"
+        record.recovery_reason = ""
+        record.protected_resources.clear()
+        record.protected_command = None
+
+    def _update_links(self, now: float) -> None:
+        for robot_id, record in self.robots.items():
+            if now - record.received_at > self.heartbeat_timeout:
+                self._mark_offline(robot_id)
+            elif record.link_state == "RECOVERING":
+                problem = self._recovery_problem(robot_id, now, operator=record.reboot_pending)
+                if problem is not None:
+                    record.recovery_reason = problem
+                elif record.reboot_pending:
+                    record.recovery_reason = "Положение подтверждено; требуется возобновление оператором"
+                else:
+                    self._confirm_recovery(robot_id)
+        if self._safety_stop and all(
+                record.link_state == "ONLINE" and now - record.received_at <= self.heartbeat_timeout
+                and self._stationary(record.state) for record in self.robots.values()):
+            self._safety_stop = False
+            if not self.paused:
+                self._emit("FLEET_RESUMED", None, "fresh stationary fleet confirmed")
 
     def ingest(self, state: dict[str, Any], now: float) -> bool:
         robot_id = state.get("robot_id")
@@ -161,19 +314,48 @@ class Dispatcher:
             self.robots[robot_id] = RobotRecord()
         robot = self.robots[robot_id]
         seq, boot_id = state.get("seq"), state.get("boot_id")
-        if not isinstance(seq, int) or isinstance(seq, bool) or not isinstance(boot_id, str):
+        if (not isinstance(seq, int) or isinstance(seq, bool) or seq < 0
+                or not isinstance(boot_id, str) or not boot_id or len(boot_id) > 128
+                or not isinstance(now, (int, float)) or isinstance(now, bool) or not math.isfinite(now)):
             return False
         if boot_id in robot.retired_boots or (boot_id == robot.boot_id and seq <= robot.seq):
             self.metrics["discarded_telemetry"] += 1
             return False
-        if robot.boot_id is not None and boot_id != robot.boot_id:
+        self._last_now = max(self._last_now, now)
+        previous_error = robot.state.get("error")
+        restarted = robot.boot_id is not None and boot_id != robot.boot_id
+        if robot.boot_id is not None and now - robot.received_at > self.heartbeat_timeout:
+            self._mark_offline(robot_id)
+        if robot.boot_id is not None and robot.link_state == "OFFLINE":
+            self.metrics["link_recovery_events_total"] += 1
+            self._emit("LINK_RECOVERED", robot_id, "fresh telemetry received")
+        if restarted:
+            self._protect(robot_id)
             robot.retired_boots.add(robot.boot_id)
+            robot.reboot_pending = True
+            robot.link_state = "RECOVERING"
+            robot.recovery_reason = "Запуск робота изменился; требуется проверка и возобновление оператором"
             self.paused = True
             self.reason = f"Робот {robot_id} перезапущен; проверьте его положение перед возобновлением"
             self._schedule_dirty = True
+            self._enter_safety_stop(robot_id, "robot boot_id changed")
+            self._emit("ROBOT_RESTARTED", robot_id, "robot boot_id changed", "warning")
+        elif robot.boot_id is not None and robot.link_state == "OFFLINE":
+            robot.link_state = "RECOVERING"
+            robot.recovery_reason = "Связь восстановлена; ожидается подтверждение безопасной остановки"
+        elif robot.boot_id is None:
+            robot.link_state = "ONLINE"
+            robot.recovery_reason = ""
         robot.state = dict(state)
         robot.received_at, robot.seq, robot.boot_id = now, seq, boot_id
         self.metrics["accepted_telemetry"] += 1
+        error = state.get("error")
+        if error and (error != previous_error or restarted):
+            self.metrics["robot_errors_total"] += 1
+            reason = error.get("message", error.get("code", "robot error")) if isinstance(error, dict) else str(error)
+            self._emit("ROBOT_ERROR", robot_id, reason, "error")
+        elif previous_error and not error and not restarted:
+            self._emit("ERROR_CLEARED", robot_id, "robot confirmed error cleared")
         return True
 
     def submit(self, robot_id: str, kind: str | dict[str, Any], target: str | None = None,
@@ -206,12 +388,28 @@ class Dispatcher:
             self._stop_commands.clear()
             self.reason = "Парк остановлен оператором"
         elif kind == "resume":
+            check_now = self._last_now if now is None else now
+            was_paused = self.paused
+            requires_confirmation = self.paused or self._safety_stop
             for rid, robot in self.robots.items():
                 state = robot.state
+                if check_now - robot.received_at > self.heartbeat_timeout:
+                    raise ValueError(f"Перед возобновлением дождитесь свежей телеметрии робота {rid}")
                 if state.get("error"):
                     raise ValueError(f"Перед возобновлением сбросьте ошибку у робота {rid}")
+                if requires_confirmation or robot.link_state == "RECOVERING":
+                    problem = self._recovery_problem(rid, check_now, operator=robot.reboot_pending)
+                    if problem is not None:
+                        raise ValueError(f"Робот {rid}: {problem}")
                 if state.get("node_id") is None and (rid not in self._round or rid == self._manual_robot):
                     raise ValueError(f"Перед возобновлением верните робота {rid} к навигационному узлу")
+            for rid, robot in self.robots.items():
+                if robot.reboot_pending:
+                    if robot.state.get("node_id") in self.map.nodes:
+                        self._round.pop(rid, None)
+                        self._held.pop(rid, None)
+                    robot.reboot_pending = False
+                    self._confirm_recovery(rid)
             if self._manual_robot is not None:
                 self._round.pop(self._manual_robot, None)
                 self._held.pop(self._manual_robot, None)
@@ -219,6 +417,9 @@ class Dispatcher:
             self._manual_robot = None
             self._stop_commands.clear()
             self._schedule_dirty = True
+            self._last_plan_signature = None
+            if was_paused and not self._safety_stop:
+                self._emit("FLEET_RESUMED", robot_id, "operator confirmed resume")
         elif kind == "manual":
             if self._manual_robot not in (None, robot_id):
                 raise ValueError("Ручное управление доступно только для одного робота одновременно")
@@ -242,17 +443,25 @@ class Dispatcher:
         self.dark_factory = bool(enabled)
 
     def tick(self, now: float) -> list[dict[str, Any]]:
+        self._last_now = max(self._last_now, now)
+        self._update_links(now)
         commands, self._outbox = self._outbox, []
         stale = [r for r, record in self.robots.items()
                  if now - record.received_at > self.heartbeat_timeout]
+        recovering = [r for r, record in self.robots.items() if record.link_state == "RECOVERING"]
+        unavailable = stale or recovering or self._safety_stop
         if self._manual_updated == math.inf:
             self._manual_updated = now
-        if stale or self.paused:
+        if unavailable or self.paused:
             self._frozen = True
             if stale:
                 self.reason = "Нет свежей телеметрии: " + ", ".join(stale)
-            commands.extend(self._stops(exclude=self._manual_robot if not stale else None))
-            manual_ready = (not stale and self._manual_robot is not None
+            elif recovering:
+                self.reason = "Проверка безопасного восстановления: " + ", ".join(recovering)
+            elif self._safety_stop:
+                self.reason = "Ожидание подтверждённой остановки всего парка"
+            commands.extend(self._stops(exclude=self._manual_robot if not unavailable else None))
+            manual_ready = (not unavailable and self._manual_robot is not None
                             and now - self._last_motion_sent >= self.command_lease
                             and all(self._stationary(r.state) for rid, r in self.robots.items()
                                     if rid != self._manual_robot))
@@ -282,9 +491,10 @@ class Dispatcher:
                 arrived = (state.get("node_id") == command["path"][-1]
                            and state.get("status") == "idle"
                            and (state.get("completed_command_id") == command["command_id"]
-                                or refresh_round))
+                                or robot_id in self._confirmed_arrivals or refresh_round))
                 if arrived:
                     self.metrics["completed_moves"] += 1
+                    self._confirmed_arrivals.discard(robot_id)
                 else:
                     unfinished[robot_id] = (self._command(robot_id, "move", path=command["path"])
                                             if refresh_round else command)
@@ -338,6 +548,26 @@ class Dispatcher:
         return self._count(commands)
 
     def _build_schedule(self, now: float) -> None:
+        previous_plans = self.metrics["plans"]
+        previous_failures = self.metrics["planning_failures"]
+        started = time.perf_counter()
+        try:
+            self._plan_schedule(now)
+        finally:
+            if self.metrics["plans"] != previous_plans:
+                duration = time.perf_counter() - started
+                self.metrics["planning_duration_seconds"] = duration
+                self.metrics["planning_duration_seconds_sum"] += duration
+                self.metrics["planning_duration_seconds_count"] += 1
+        if self.metrics["planning_failures"] != previous_failures:
+            reason = self.reason or "Безопасный маршрут не найден"
+            if reason != self._last_planning_failure:
+                self._emit("PLANNING_FAILED", None, reason, "warning")
+            self._last_planning_failure = reason
+        elif self.metrics["plans"] != previous_plans:
+            self._last_planning_failure = None
+
+    def _plan_schedule(self, now: float) -> None:
         starts: dict[str, str] = {}
         blocked: set[str] = set()
         for robot_id, record in self.robots.items():
@@ -438,20 +668,33 @@ class Dispatcher:
             self._schedule_dirty = True
 
     def snapshot(self, now: float) -> dict[str, Any]:
-        return {"paused": self.paused, "dark_factory": self.dark_factory,
+        offline = sum(now - record.received_at > self.heartbeat_timeout for record in self.robots.values())
+        safety_stop = self._safety_stop or bool(offline) or any(
+            record.link_state == "RECOVERING" for record in self.robots.values())
+        return {"paused": self.paused, "dark_factory": self.dark_factory, "safety_stop": safety_stop,
                 "manual_robot": self._manual_robot, "reason": self.reason,
                 "goals": dict(self.goals), "reservations": {r: sorted(self._resources(r)) for r in self.robots},
                 "robots": {r: {"online": now - v.received_at <= self.heartbeat_timeout,
                                "age": max(0.0, now - v.received_at) if math.isfinite(v.received_at) else None,
-                               "goal": self.goals.get(r)} for r, v in self.robots.items()},
-                "metrics": dict(self.metrics),
+                               "goal": self.goals.get(r),
+                               "link_state": "OFFLINE" if now - v.received_at > self.heartbeat_timeout else v.link_state,
+                               "recovery_reason": v.recovery_reason,
+                               "recovery_ready": (v.link_state == "RECOVERING"
+                                   and self._recovery_problem(r, now, operator=v.reboot_pending) is None)}
+                           for r, v in self.robots.items()},
+                "metrics": {**self.metrics, "offline_robots": offline},
                 "planner": {"expansions": self.planner.last_expansions,
                             "attempts": self.planner.last_attempts}}
 
     def _resources(self, robot_id: str) -> set[str]:
         state = self.robots[robot_id].state
-        resources = {n for n in (state.get("node_id"),) if n in self.map.nodes}
-        resources.update(n for n in (state.get("edge") or ()) if n in self.map.nodes)
+        resources = set(self.robots[robot_id].protected_resources)
+        node = state.get("node_id")
+        if isinstance(node, str) and node in self.map.nodes:
+            resources.add(node)
+        edge = state.get("edge")
+        if isinstance(edge, (list, tuple)):
+            resources.update(n for n in edge if isinstance(n, str) and n in self.map.nodes)
         if robot_id in self._round:
             resources.update(self._round[robot_id]["path"])
         if robot_id in self._held:
@@ -479,10 +722,13 @@ class Dispatcher:
 
     @staticmethod
     def _stationary(state: dict[str, Any]) -> bool:
-        velocity = state.get("velocity") or {}
+        velocity = state.get("velocity", {})
+        if not isinstance(velocity, dict):
+            return False
+        values = (velocity.get("linear", 0.0), velocity.get("angular", 0.0))
         return (state.get("status") in {"idle", "paused", "manual", "error"}
-                and abs(velocity.get("linear", 0.0)) < 0.001
-                and abs(velocity.get("angular", 0.0)) < 0.001)
+                and all(isinstance(value, (int, float)) and not isinstance(value, bool)
+                        and math.isfinite(value) and abs(value) < 0.001 for value in values))
 
     def _count(self, commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
         self.metrics["commands"] += len(commands)

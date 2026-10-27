@@ -1,0 +1,54 @@
+name: Ubuntu tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Build Docker test stage
+        run: docker build --target test -t dikom-tests .
+
+      - name: Import Python and ROS modules
+        run: >-
+          docker run --rm dikom-tests python -c
+          "import warehouse.api, warehouse.dispatcher, warehouse.map,
+          warehouse.robot, warehouse.ros_simulator, warehouse.transport;
+          import rclpy; print('Python and ROS imports OK')"
+
+      - name: Run complete pytest suite
+        shell: bash
+        run: |
+          mkdir -p reports
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --mount "type=bind,source=$PWD/reports,target=/reports" \
+            -e PYTHONDONTWRITEBYTECODE=1 dikom-tests \
+            python -m pytest -q -p no:cacheprovider --junitxml=/reports/pytest.xml \
+            | tee reports/pytest.txt
+
+      - name: Save test reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ubuntu-pytest-results
+          path: reports/
+          if-no-files-found: ignore
+          retention-days: 14

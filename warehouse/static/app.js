@@ -33,7 +33,26 @@
     if (message && typeof message === "object") return errorText(message);
     return String(message).replace(/\{['"]code['"]:\s*['"]([^'"]+)['"],\s*['"]message['"]:\s*(['"])(.*?)\2\}/g, (_, code, quote, detail) => errorText({ code, message: detail })).replace(/\brobot(\d+)\b/gi, "Робот $1");
   }
-  function robotStatus(robot) { return robot.connected === false ? "Нет связи" : stateLabels[robot.state] || "Ожидание"; }
+  function robotLinkState(robot) { return robot.connected === false ? "OFFLINE" : robot.link_state || "ONLINE"; }
+  function robotReady(robot) { return Boolean(robot && robotLinkState(robot) === "ONLINE"); }
+  function canResume(robot) { return robotReady(robot) || Boolean(robot && robotLinkState(robot) === "RECOVERING" && robot.recovery_ready); }
+  function positionUncertain(robot) { return !state.connected || Boolean(robot.position_stale) || !robotReady(robot); }
+  function positionText(robot) {
+    if (robot.last_seen == null && !robotReady(robot)) return "—";
+    const suffix = positionUncertain(robot) ? robotLinkState(robot) === "RECOVERING" ? " · не подтверждена" : " · последняя" : "";
+    return `${number(robot.x)} / ${number(robot.y)}${suffix}`;
+  }
+  function positionReason(robot) {
+    if (!state.connected) return "Браузер не получает свежие данные сервера";
+    return robot.recovery_reason || (positionUncertain(robot) ? "Последняя известная позиция; актуальное положение не подтверждено" : "");
+  }
+  function robotStatus(robot) {
+    if (robotLinkState(robot) === "OFFLINE") return "Нет связи";
+    if (robotLinkState(robot) === "RECOVERING") return "Восстановление связи";
+    if (robot.error || robot.availability === "ERROR") return "Ошибка";
+    if (robot.availability === "PAUSED") return "Остановлен";
+    return stateLabels[robot.state] || "Ожидание";
+  }
   function orderText(robot) {
     if (!robot.order) return "Нет активного приказа";
     if (typeof robot.order === "string") return robot.order;
@@ -88,7 +107,7 @@
   function command(id, body, options) { return request(`/api/robots/${encodeURIComponent(id)}/commands`, body, options); }
   async function operatorCommand(body, label) {
     const robot = selectedRobot();
-    if (!robot || !state.connected) return;
+    if (!robot || !state.connected || (["move", "park"].includes(body.type) && !robotReady(robot)) || (body.type === "resume" && !canResume(robot))) return;
     try {
       if (["stop", "resume"].includes(body.type)) { state.manualChanging = true; await releaseKeys(); }
       await command(robot.id, body);
@@ -125,8 +144,11 @@
     setText("selectedRobotState", robot ? robotStatus(robot) : "Ожидание телеметрии");
     setText("robotAvatar", robot?.id.replace(/^robot/i, "Р").slice(0, 4) || "Р");
     $("robotAvatar").style.color = robot ? robotColor(robot.id) : "";
-    $("robotStateDot").className = `status-dot ${robot ? robot.connected === false || robot.error ? "error" : "online" : ""}`;
-    setText("positionValue", robot ? `${number(robot.x)} / ${number(robot.y)}` : "—");
+    $("selectedRobotState").title = robot ? positionReason(robot) : "";
+    $("robotStateDot").className = `status-dot ${robot ? robotLinkState(robot) === "OFFLINE" ? "offline" : robotLinkState(robot) === "RECOVERING" ? "recovering" : robot.error ? "error" : "online" : ""}`;
+    setText("positionValue", robot ? positionText(robot) : "—");
+    $("positionValue").classList.toggle("position-stale", Boolean(robot && positionUncertain(robot)));
+    $("positionValue").title = robot ? positionReason(robot) : "";
     setText("headingValue", robot ? `${number(((robot.theta * 180 / Math.PI) % 360 + 360) % 360, 1)}°` : "—");
     setText("speedValue", robot ? number(robot.v) : "—");
     setText("angularValue", robot ? number(robot.omega) : "—");
@@ -135,13 +157,13 @@
     $("robotError").hidden = !robot?.error;
     $("robotError").textContent = errorText(robot?.error);
     $("manualEnabled").checked = manual;
-    $("manualEnabled").disabled = !usable || state.manualChanging || manualLocked || robot?.connected === false;
-    $("moveButton").disabled = !usable || !state.targetId || manual || robot?.connected === false;
-    $("parkButton").disabled = !usable || manual || robot?.connected === false;
+    $("manualEnabled").disabled = !usable || state.manualChanging || manualLocked || !robotReady(robot);
+    $("moveButton").disabled = !usable || !state.targetId || manual || !robotReady(robot);
+    $("parkButton").disabled = !usable || manual || !robotReady(robot);
     $("stopButton").disabled = !usable;
-    $("resumeButton").disabled = !usable || robot?.connected === false;
+    $("resumeButton").disabled = !usable || !canResume(robot);
     $("clearErrorButton").disabled = !usable || !robot?.error;
-    for (const button of document.querySelectorAll(".key")) button.disabled = !usable || !manual || state.manualId !== robot?.id || robot?.connected === false || state.manualChanging;
+    for (const button of document.querySelectorAll(".key")) button.disabled = !usable || !manual || state.manualId !== robot?.id || !robotReady(robot) || state.manualChanging;
     for (const [field, key] of [["faultStuck", "stuck"], ["faultLink", "link_lost"], ["faultThrottle", "throttle"]]) {
       $(field).disabled = !usable;
       $(field).checked = Boolean(robot?.fault[key]);
@@ -169,13 +191,17 @@
       row.className = `fleet-row${robot.id === state.selectedId ? " selected" : ""}`;
       row.querySelector(".fleet-color").style.background = robotColor(robot.id);
       const badge = row.cells[1].firstElementChild;
-      badge.className = `state-badge ${robot.error || !robot.connected ? "error" : robot.state === "moving" || robot.state === "manual" ? "moving" : robot.state === "idle" || robot.state === "parked" ? "idle" : ""}`;
+      badge.className = `state-badge ${robotLinkState(robot) === "OFFLINE" ? "offline" : robotLinkState(robot) === "RECOVERING" ? "recovering" : robot.error ? "error" : robot.availability === "PAUSED" || robot.state === "paused" ? "paused" : robot.state === "moving" || robot.state === "manual" ? "moving" : robot.state === "idle" || robot.state === "parked" ? "idle" : ""}`;
       badge.textContent = robotStatus(robot);
-      row.cells[2].textContent = `${number(robot.x)} / ${number(robot.y)}`;
+      badge.title = positionReason(robot);
+      row.cells[2].textContent = positionText(robot);
+      row.cells[2].className = positionUncertain(robot) ? "position-stale" : "";
+      row.cells[2].title = positionReason(robot);
       row.cells[3].textContent = `${number(robot.v)} м/с`;
       row.cells[4].textContent = orderText(robot); row.cells[4].title = errorText(robot.error);
-      const link = row.cells[5]; link.className = `link-cell${robot.connected === false ? " lost" : ""}`;
-      link.textContent = robot.connected === false ? `Нет связи · ${number(robot.last_seen, 1)} с` : robot.fault.throttle ? `Замедление · ${number(robot.last_seen, 1)} с` : `В сети · ${number(robot.last_seen, 1)} с`;
+      const link = row.cells[5]; link.className = `link-cell${robotLinkState(robot) === "OFFLINE" ? " lost" : robotLinkState(robot) === "RECOVERING" ? " recovering" : ""}`;
+      link.textContent = !state.connected ? "Нет данных сервера" : robotLinkState(robot) === "OFFLINE" ? `Нет связи · ${number(robot.last_seen, 1)} с` : robotLinkState(robot) === "RECOVERING" ? `Восстановление · ${number(robot.last_seen, 1)} с` : robot.fault.throttle ? `Замедление · ${number(robot.last_seen, 1)} с` : `В сети · ${number(robot.last_seen, 1)} с`;
+      link.title = positionReason(robot);
     }
     setText("fleetCount", `${state.robots.length} роботов`);
   }
@@ -201,6 +227,7 @@
     if (!state.robots.some((robot) => robot.id === state.selectedId)) state.selectedId = state.robots[0]?.id || "";
     if (ids !== priorIds) populateSelect($("robotSelect"), state.robots.map((robot) => [robot.id, robotName(robot.id)]), state.selectedId);
     if (state.manualId && !state.robots.some((robot) => robot.id === state.manualId)) { releaseKeys(); state.manualId = null; }
+    if (state.manualId && !robotReady(state.robots.find((robot) => robot.id === state.manualId))) releaseKeys();
     for (const robot of state.robots) {
       const trail = state.trails.get(robot.id) || [];
       const previous = trail[trail.length - 1];
@@ -210,14 +237,14 @@
     }
     for (const id of state.trails.keys()) if (!state.robots.some((robot) => robot.id === id)) state.trails.delete(id);
     setText("onlineMetric", `${state.robots.filter((robot) => robot.connected !== false).length}/${state.robots.length}`);
-    setText("movingMetric", state.robots.filter((robot) => Math.abs(robot.v) > .01 || Math.abs(robot.omega) > .01).length);
+    setText("movingMetric", state.robots.filter((robot) => robotReady(robot) && (Math.abs(robot.v) > .01 || Math.abs(robot.omega) > .01)).length);
     const metrics = snapshot.metrics || {};
     setText("completedMetric", metrics.completed_tasks ?? metrics.completed_orders ?? metrics.completed ?? 0);
     setText("errorMetric", state.robots.filter((robot) => robot.error || robot.connected === false).length);
     $("darkFactory").checked = Boolean(snapshot.dark_factory);
     $("emptyState").hidden = true;
     const mapLabel = snapshot.map.name === "hardcore" ? "Узкие коридоры" : "Обычный склад";
-    setText("mapCaption", `${mapLabel} · ${state.nodes.size} узлов · ${(snapshot.map.edges || []).length} рёбер${snapshot.dispatcher?.paused ? " · парк на паузе" : ""}`);
+    setText("mapCaption", `${mapLabel} · ${state.nodes.size} узлов · ${(snapshot.map.edges || []).length} рёбер${snapshot.dispatcher?.paused || snapshot.dispatcher?.safety_stop ? " · парк на паузе" : ""}`);
     updateRobotCount();
     const seconds = Number(snapshot.sim_time ?? snapshot.time ?? 0);
     const timestamp = new Date(snapshot.time);
@@ -240,7 +267,7 @@
     $("darkFactory").disabled = !online;
     $("resetButton").disabled = !online;
     if (!online) releaseKeys();
-    if (changed) updateDetails();
+    if (changed) { updateDetails(); if (state.snapshot) updateFleet(); view.dirty = true; }
   }
   function connect() {
     clearTimeout(reconnectTimer);
@@ -324,7 +351,7 @@
           if (a && b) line(a, b, "#4b88e88a", 5);
         }
       }
-      if (robot.error || robot.fault.stuck || robot.connected === false) {
+      if (robot.error || robot.fault.stuck || !robotReady(robot)) {
         const edge = robot.edge;
         const ends = Array.isArray(edge) ? edge : edge ? [edge.from, edge.to] : [];
         if (ends.length === 2) {
@@ -353,28 +380,33 @@
     ctx.fillStyle = "#75869c"; ctx.textAlign = "center"; ctx.font = "13px Segoe UI, sans-serif"; ctx.fillText(`${meter} м`, 20 + barWidth / 2, view.height - 10);
   }
   function drawRobot(robot) {
+    if (robot.last_seen == null && !robotReady(robot)) return;
     const p = worldPoint(robot.x, robot.y);
     const scale = view.scale;
     const color = robotColor(robot.id);
     const selected = robot.id === state.selectedId;
+    const uncertain = positionUncertain(robot);
+    const recovering = robotLinkState(robot) === "RECOVERING";
     if (selected) { ctx.beginPath(); ctx.arc(p.x, p.y, scale * .72 + 3, 0, Math.PI * 2); ctx.fillStyle = `${color}13`; ctx.fill(); ctx.strokeStyle = `${color}65`; ctx.lineWidth = 1.3; ctx.stroke(); }
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(-robot.theta);
+    if (uncertain) ctx.globalAlpha = .5;
     ctx.shadowColor = "#183b6a18"; ctx.shadowBlur = 5; ctx.shadowOffsetY = 2;
     ctx.fillStyle = "#31435a";
     ctx.fillRect(-.24 * scale, -.39 * scale, .48 * scale, .11 * scale);
     ctx.fillRect(-.24 * scale, .28 * scale, .48 * scale, .11 * scale);
-    ctx.fillStyle = robot.connected === false ? "#9aa8b8" : color;
+    ctx.fillStyle = uncertain ? "#9aa8b8" : color;
     ctx.beginPath(); ctx.roundRect(-.4 * scale, -.3 * scale, .8 * scale, .6 * scale, Math.min(5, scale * .1)); ctx.fill();
     ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
     ctx.strokeStyle = "#ffffff55"; ctx.lineWidth = 1; ctx.stroke();
     ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.moveTo(.31 * scale, 0); ctx.lineTo(.08 * scale, -.12 * scale); ctx.lineTo(.08 * scale, .12 * scale); ctx.closePath(); ctx.fill();
     ctx.fillStyle = "#ffffff45"; ctx.fillRect(-.27 * scale, -.14 * scale, .16 * scale, .28 * scale);
     ctx.restore();
+    if (uncertain) { ctx.beginPath(); ctx.arc(p.x, p.y, scale * .64 + 3, 0, Math.PI * 2); ctx.strokeStyle = recovering ? "#b7832d" : "#8996a8"; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]); ctx.stroke(); ctx.setLineDash([]); }
     const label = robotName(robot.id); ctx.font = "600 14px Segoe UI, sans-serif";
     const textWidth = ctx.measureText(label).width;
     ctx.fillStyle = "#ffffffed"; ctx.beginPath(); ctx.roundRect(p.x - textWidth / 2 - 7, p.y - scale * .7 - 25, textWidth + 14, 23, 4); ctx.fill();
-    ctx.textAlign = "center"; ctx.fillStyle = robot.error || robot.connected === false ? "#c25b65" : color; ctx.fillText(label, p.x, p.y - scale * .7 - 8);
-    if (robot.error || robot.connected === false) { ctx.beginPath(); ctx.arc(p.x + scale * .42, p.y - scale * .33, 7, 0, Math.PI * 2); ctx.fillStyle = "#e56a72"; ctx.fill(); ctx.fillStyle = "#fff"; ctx.font = "bold 12px Segoe UI"; ctx.fillText("!", p.x + scale * .42, p.y - scale * .33 + 4); }
+    ctx.textAlign = "center"; ctx.fillStyle = uncertain ? recovering ? "#9c702a" : "#7b899a" : robot.error ? "#c25b65" : color; ctx.fillText(label, p.x, p.y - scale * .7 - 8);
+    if (robot.error || uncertain) { ctx.beginPath(); ctx.arc(p.x + scale * .42, p.y - scale * .33, 7, 0, Math.PI * 2); ctx.fillStyle = uncertain ? recovering ? "#b7832d" : "#8996a8" : "#e56a72"; ctx.fill(); ctx.fillStyle = "#fff"; ctx.font = "bold 12px Segoe UI"; ctx.fillText(uncertain ? "?" : "!", p.x + scale * .42, p.y - scale * .33 + 4); }
   }
 
   function clickMap(point) {
@@ -432,7 +464,7 @@
   function manualVelocity() { return { linear: (Number(keys.has("w")) - Number(keys.has("s"))) * .5, angular: (Number(keys.has("a")) - Number(keys.has("d"))) * 1.25 }; }
   function sendManual(force = false) {
     const id = state.manualId;
-    if (!id || (!state.connected && !force) || (!force && !keys.size)) return manualPump;
+    if (!id || (!force && (!state.connected || !keys.size || !robotReady(state.robots.find((robot) => robot.id === id))))) return manualPump;
     manualPending = { id, velocity: manualVelocity() };
     if (manualPump) return manualPump;
     manualPump = (async () => {
@@ -463,7 +495,7 @@
     } catch (error) { toast(error.message, true); }
     finally { state.manualChanging = false; updateDetails(); }
   });
-  function canDrive() { return Boolean(state.connected && state.manualId && state.manualId === state.selectedId && !state.manualChanging && selectedRobot()?.connected !== false); }
+  function canDrive() { return Boolean(state.connected && state.manualId && state.manualId === state.selectedId && !state.manualChanging && robotReady(selectedRobot())); }
   document.addEventListener("keydown", (event) => {
     const key = { KeyW: "w", KeyA: "a", KeyS: "s", KeyD: "d" }[event.code];
     if (event.code === "Escape") { releaseKeys(); return; }

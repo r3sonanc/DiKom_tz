@@ -10,6 +10,7 @@ class RosTransport:
         self._sequence = 0
         self._node = None
         self._thread = None
+        self._closing = False
 
     def start(self):
         import rclpy
@@ -20,6 +21,7 @@ class RosTransport:
         from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
         from std_msgs.msg import String
 
+        self._closing = False
         self._context = Context()
         rclpy.init(args=[], context=self._context)
         self._node = Node("warehouse_dispatcher", context=self._context)
@@ -36,6 +38,14 @@ class RosTransport:
         self._executor.add_node(self._node)
         self._thread = threading.Thread(target=self._executor.spin, daemon=True, name="ros-bridge")
         self._thread.start()
+
+    def is_healthy(self):
+        if self._closing or self._node is None or self._thread is None:
+            return False
+        try:
+            return self._thread.is_alive() and self._context.ok()
+        except (RuntimeError, AttributeError):
+            return False
 
     def _receive(self, message):
         try:
@@ -72,6 +82,7 @@ class RosTransport:
         self._publisher.publish(String(data=json.dumps(command, allow_nan=False)))
 
     def close(self):
+        self._closing = True
         if self._thread:
             self._executor.shutdown(timeout_sec=2)
             self._thread.join(timeout=2)

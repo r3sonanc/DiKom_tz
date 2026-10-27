@@ -2,6 +2,7 @@
 
 import argparse
 import cProfile
+import hashlib
 import io
 import json
 import math
@@ -32,12 +33,13 @@ def percentile(values, fraction):
     return sorted(values)[max(0, math.ceil(len(values) * fraction) - 1)]
 
 
-def simulate(map_name, robots, seconds, seed):
+def simulate(map_name, robots, seconds, seed, collect_timings=False):
     world = WorldCore(map_name, robots, "benchmark")
     dispatcher = Dispatcher(world.map, list(world.robots), seed=seed)
     dispatcher.set_dark_factory(True)
     revisions = {}
     sequence = 0
+    tick_samples = []
     for frame in range(1, round(seconds * 50) + 1):
         now = round(frame / 50, 8)
         world.tick(0.02, now)
@@ -45,7 +47,11 @@ def simulate(map_name, robots, seconds, seed):
             continue
         for state in world.telemetry(now):
             dispatcher.ingest(state, now)
-        for command in dispatcher.tick(now):
+        started = time.perf_counter() if collect_timings else 0.0
+        commands = dispatcher.tick(now)
+        if collect_timings:
+            tick_samples.append((time.perf_counter() - started) * 1000)
+        for command in commands:
             command = {**command, "world_id": world.world_id}
             command_id = command.get("command_id")
             if command_id not in revisions:
@@ -54,9 +60,26 @@ def simulate(map_name, robots, seconds, seed):
             command["command_seq"] = revisions[command_id]
             world.command(command, now)
     errors = [robot.error for robot in world.robots.values() if robot.error]
-    return {"completed_tasks": dispatcher.metrics["completed_tasks"],
+    result = {"completed_tasks": dispatcher.metrics["completed_tasks"],
             "planning_failures": dispatcher.metrics["planning_failures"],
             "errors": errors}
+    if tick_samples:
+        result["dispatcher_tick_ms"] = {
+            "p50": round(statistics.median(tick_samples), 6),
+            "p95": round(percentile(tick_samples, 0.95), 6),
+            "max": round(max(tick_samples), 6),
+            "count": len(tick_samples),
+        }
+    metrics = dispatcher.metrics
+    count = metrics.get("planning_duration_seconds_count", 0)
+    total = metrics.get("planning_duration_seconds_sum", 0.0)
+    result["planning"] = {
+        "last_seconds": metrics.get("planning_duration_seconds", 0.0),
+        "total_seconds": total,
+        "count": count,
+        "mean_seconds": total / count if count else 0.0,
+    }
+    return result
 
 
 def make_runtime(map_name="normal", robots=3):
@@ -110,13 +133,16 @@ def main():
               "core_transport": "direct in-memory commands and states, without ROS/DDS/HTTP",
               "snapshots": "sequential virtual clients at one shared frame timestamp; excludes network I/O",
               "serialization": "cached" if hasattr(FleetRuntime, "snapshot_json") else "uncached",
+              "source_sha256": {name: hashlib.sha256((Path(__file__).resolve().parents[1] / name).read_bytes()).hexdigest()
+                                for name in ("warehouse/dispatcher.py", "warehouse/api.py", "warehouse/robot.py")},
+              "tick_timing_scope": "stdlib perf_counter around each tick; summary from the last repetition; tracemalloc run excludes timing sample storage",
               "core": [], "snapshot": []}
     for map_name, robots in (("normal", 3), ("hardcore", 5)):
         for seed in args.seeds:
             timings = []
             for _ in range(args.repeats):
                 started = time.perf_counter()
-                result = simulate(map_name, robots, args.seconds, seed)
+                result = simulate(map_name, robots, args.seconds, seed, collect_timings=True)
                 timings.append(time.perf_counter() - started)
             tracemalloc.start()
             simulate(map_name, robots, args.seconds, seed)
