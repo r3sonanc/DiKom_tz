@@ -8,12 +8,12 @@
   <meta charset="utf-8">
   <!-- L5: Viewport подстраивает ширину под устройство без начального масштабирования. -->
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- L6: Цвет оформления страницы для поддерживающих его интерфейсов браузера. -->
-  <meta name="theme-color" content="#16263a">
+  <!-- L6: Задаёт графитовый цвет оформления браузера в тон шапке приложения. -->
+  <meta name="theme-color" content="#29292d">
   <!-- L7: Название вкладки браузера. -->
   <title>ДиКом | Диспетчер склада</title>
-  <!-- L8: Иконка вкладки хранится прямо в data-URL как SVG; отдельный файл не нужен. -->
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%23246be5'/%3E%3Cpath d='M12 28h17v-4h-3V10H15v8c0 3-1 5-3 6zm7-14h3v10h-5c1-2 2-4 2-6z' fill='white'/%3E%3C/svg%3E">
+  <!-- L8: Подключает фирменную SVG-иконку ДиКом из static/imges как значок вкладки. -->
+  <link rel="icon" type="image/svg+xml" href="/static/imges/dikom-favicon.svg">
   <!-- L9: Подключает CSS со стилями интерфейса. -->
   <link rel="stylesheet" href="/static/style.css">
   <!-- L10: Подключает JavaScript; defer откладывает выполнение до разбора HTML. -->
@@ -24,8 +24,8 @@
 <body>
   <!-- L13: Семантическая шапка приложения; class связывает её с CSS. -->
   <header class="app-header">
-    <!-- L14: Ссылка-логотип ведёт на главную страницу; aria-label задаёт полное имя, aria-hidden скрывает декор от озвучивания. -->
-    <a class="brand" href="/" aria-label="ДиКом, диспетчер склада"><span class="brand-mark" aria-hidden="true">Д</span><span>ДиКом</span></a>
+    <!-- L14: Ссылка-логотип: SVG ДиКом размером 36 × 36 px и прежнее название; пустой alt исключает повтор озвучивания. -->
+    <a class="brand" href="/" aria-label="ДиКом, диспетчер склада"><img class="brand-mark" src="/static/imges/dikom-favicon.svg" width="36" height="36" alt="" aria-hidden="true"><span>ДиКом</span></a>
     <!-- L15: Текстовое название приложения в шапке. -->
     <span class="app-title">Диспетчер склада</span>
     <!-- L16: Кружок и текст WebSocket-соединения; id позволяют JS менять их, role=status озвучивает изменения. -->

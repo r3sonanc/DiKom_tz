@@ -14,8 +14,8 @@ setup(
     version="1.0.0",
     # L8: Включает только warehouse и его вложенные Python-пакеты.
     packages=find_packages(include=("warehouse", "warehouse.*")),
-    # L9: Добавляет HTML, CSS и JavaScript в устанавливаемый Python-пакет.
-    package_data={"warehouse": ["static/*"]},
+    # L9: Включает HTML/CSS/JS и вложенные SVG из static/imges в устанавливаемый Python-пакет.
+    package_data={"warehouse": ["static/*", "static/imges/*.svg"]},
     # L10: Начинает список файлов, устанавливаемых в общие каталоги ROS.
     data_files=[
         # L11: Маркер регистрирует имя пакета в индексе ament, чтобы ros2 мог его найти.

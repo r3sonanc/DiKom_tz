@@ -6,7 +6,7 @@ setup(
     name="warehouse_sim",
     version="1.0.0",
     packages=find_packages(include=("warehouse", "warehouse.*")),
-    package_data={"warehouse": ["static/*"]},
+    package_data={"warehouse": ["static/*", "static/imges/*.svg"]},
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/warehouse_sim"]),
         ("share/warehouse_sim", ["package.xml"]),
