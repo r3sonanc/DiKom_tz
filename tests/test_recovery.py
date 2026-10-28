@@ -268,7 +268,14 @@ class DispatcherMetricTests(unittest.TestCase):
         self.publish(2.3)
         self.assertEqual(self.dispatch.metrics["link_recovery_events_total"], 2)
         self.dispatch.tick(2.3)
-        self.dispatch.tick(2.4)
+        for repeat in range(100):
+            now = 2.3 + repeat / 1000
+            for record in self.dispatch.robots.values():
+                self.assertFalse(self.dispatch.ingest(record.state, now))
+            self.dispatch.tick(now)
+        self.assertEqual(self.dispatch.metrics["link_loss_events_total"], 2)
+        self.assertEqual(self.dispatch.metrics["link_recovery_events_total"], 2)
+        self.assertEqual(self.dispatch.metrics["fleet_safety_stops_total"], 1)
         events = self.dispatch.drain_events()
         self.assertEqual(sum(e["code"] == "FLEET_RESUMED" for e in events), 1)
         self.assertFalse(self.dispatch.snapshot(2.4)["safety_stop"])

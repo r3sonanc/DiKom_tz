@@ -1,6 +1,7 @@
 """Check a running ROS-backed application; this replaces its simulation world."""
 
 import argparse
+import hashlib
 import json
 import platform
 from pathlib import Path
@@ -17,6 +18,7 @@ def main():
     parser.add_argument("--url", default="http://127.0.0.1:8000")
     parser.add_argument("--ros", action="store_true", help="Also check actual ROS node discovery")
     parser.add_argument("--output", help="Optional path for the JSON report")
+    parser.add_argument("--source-commit", help="Commit containing the checked application sources")
     args = parser.parse_args()
     results = []
 
@@ -75,7 +77,9 @@ def main():
     command("move", target="r2c4")
     wait(lambda s: robot(s)["node_id"] is None)
     call("/api/robots/robot1/faults", {"link_lost": True})
-    unavailable = wait(lambda s: not robot(s)["connected"] and s["dispatcher"]["safety_stop"])
+    # A snapshot can observe timeout just before the controller counts that transition.
+    unavailable = wait(lambda s: not robot(s)["connected"] and s["dispatcher"]["safety_stop"]
+                       and s["metrics"]["link_loss_events_total"] == 1)
     assert robot(unavailable)["link_state"] == "OFFLINE"
     assert robot(unavailable)["position_stale"]
     retained = set(unavailable["dispatcher"]["reservations"]["robot1"])
@@ -142,6 +146,9 @@ def main():
     wait(lambda s: len(s["robots"]) == 3 and all(r["connected"] for r in s["robots"]))
     release = Path("/etc/os-release")
     report = {"ok": True, "checks": results, "url": args.url,
+              "source_commit": args.source_commit,
+              "source_sha256": {name: hashlib.sha256((Path(__file__).resolve().parents[1] / name).read_bytes()).hexdigest()
+                                for name in ("warehouse/api.py", "warehouse/dispatcher.py", "warehouse/robot.py")},
               "python": platform.python_version(), "platform": platform.platform(),
               "os_release": release.read_text() if release.exists() else None,
               "observability": {"partial_loss_health": partial_health,

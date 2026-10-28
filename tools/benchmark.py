@@ -120,11 +120,13 @@ def main():
     parser.add_argument("--clients", type=int, nargs="+", default=[1, 10, 50])
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--source-commit", help="Commit containing the measured sources")
     args = parser.parse_args()
     if (args.seconds <= 0 or args.repeats < 1 or args.snapshot_rounds < 1
             or not args.seeds or any(count < 1 for count in args.clients)):
         parser.error("positive durations, repetitions and client counts are required")
-    report = {"python": platform.python_version(), "platform": platform.platform(),
+    report = {"source_commit": args.source_commit,
+              "python": platform.python_version(), "platform": platform.platform(),
               "simulation_seconds": args.seconds, "seeds": args.seeds,
               "repeats": args.repeats,
               "memory_scope": "tracemalloc Python allocations, not process RSS/container/DDS",
