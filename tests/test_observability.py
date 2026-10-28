@@ -196,6 +196,10 @@ def test_malformed_sequence_cannot_crash_the_controller_or_refresh_health():
     ("edge", ["p1", "p2"]),
     ("current_order", {"type": "move", "command_id": "wrong", "path": ["p1", "r1c5"]}),
     ("boot_id", ""),
+    ("sim_time", None),
+    ("sim_time", True),
+    ("sim_time", float("nan")),
+    ("sim_time", float("inf")),
     ("status", []),
     ("current_order", {"type": [], "command_id": "malformed"}),
 ])
@@ -272,6 +276,18 @@ def test_log_records_keep_utc_fields_on_one_line(caplog):
     record = next(item for item in caplog.records if getattr(item, "event_code", None) == "TEST_EVENT")
     assert "\n" not in record.getMessage()
     assert "first line\\nsecond line" in record.getMessage()
+
+
+def test_info_events_reach_process_handlers_once(caplog):
+    _, runtime, _, _ = prepared_app(robots=1)
+    with caplog.at_level(logging.INFO, logger="warehouse.api"):
+        runtime.event("Fleet resumed", code="TEST_INFO", robot_id="robot1", reason="confirmed stop")
+    records = [record for record in caplog.records if getattr(record, "event_code", None) == "TEST_INFO"]
+    assert len(records) == 1
+    assert records[0].name == "warehouse.api"
+    assert records[0].levelno == logging.INFO
+    assert records[0].robot_id == "robot1"
+    assert records[0].event_reason == "confirmed stop"
 
 def test_snapshot_separates_recovering_from_freshness_and_stale_position():
     _, runtime, _, _ = prepared_app(robots=1)

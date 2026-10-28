@@ -35,7 +35,21 @@
   }
   function robotLinkState(robot) { return robot.connected === false ? "OFFLINE" : robot.link_state || "ONLINE"; }
   function robotReady(robot) { return Boolean(robot && robotLinkState(robot) === "ONLINE"); }
-  function canResume(robot) { return robotReady(robot) || Boolean(robot && robotLinkState(robot) === "RECOVERING" && robot.recovery_ready); }
+  function fleetResumeBlocker() {
+    if (!state.connected) return "Браузер не получает свежие данные сервера";
+    if (!state.robots.length) return "Ожидание телеметрии роботов";
+    const stopped = state.snapshot?.dispatcher?.paused || state.snapshot?.dispatcher?.safety_stop;
+    for (const robot of state.robots) {
+      let reason = "";
+      if (robotLinkState(robot) === "OFFLINE") reason = "Нет свежей телеметрии";
+      else if (robot.error) reason = "Перед возобновлением сбросьте ошибку";
+      else if (!robotReady(robot) && !robot.recovery_ready) reason = robot.recovery_reason || "Ожидание проверки положения";
+      else if (stopped && (!["idle", "paused", "manual", "error"].includes(robot.state) || Math.abs(robot.v) >= .001 || Math.abs(robot.omega) >= .001)) reason = "Ожидание подтверждения остановки";
+      else if (!robot.node_id && (!robot.edge || state.snapshot?.dispatcher?.manual_robot === robot.id)) reason = "Верните робота к навигационному узлу";
+      if (reason) return `${robotName(robot.id)}: ${reason}`;
+    }
+    return "";
+  }
   function positionUncertain(robot) { return !state.connected || Boolean(robot.position_stale) || !robotReady(robot); }
   function positionText(robot) {
     if (robot.last_seen == null && !robotReady(robot)) return "—";
@@ -107,7 +121,7 @@
   function command(id, body, options) { return request(`/api/robots/${encodeURIComponent(id)}/commands`, body, options); }
   async function operatorCommand(body, label) {
     const robot = selectedRobot();
-    if (!robot || !state.connected || (["move", "park"].includes(body.type) && !robotReady(robot)) || (body.type === "resume" && !canResume(robot))) return;
+    if (!robot || !state.connected || (["move", "park"].includes(body.type) && !robotReady(robot)) || (body.type === "resume" && fleetResumeBlocker())) return;
     try {
       if (["stop", "resume"].includes(body.type)) { state.manualChanging = true; await releaseKeys(); }
       await command(robot.id, body);
@@ -161,7 +175,9 @@
     $("moveButton").disabled = !usable || !state.targetId || manual || !robotReady(robot);
     $("parkButton").disabled = !usable || manual || !robotReady(robot);
     $("stopButton").disabled = !usable;
-    $("resumeButton").disabled = !usable || !canResume(robot);
+    const resumeBlocker = fleetResumeBlocker();
+    $("resumeButton").disabled = !usable || Boolean(resumeBlocker);
+    $("resumeButton").title = resumeBlocker || "Возобновить весь парк; сервер повторно проверит безопасность";
     $("clearErrorButton").disabled = !usable || !robot?.error;
     for (const button of document.querySelectorAll(".key")) button.disabled = !usable || !manual || state.manualId !== robot?.id || !robotReady(robot) || state.manualChanging;
     for (const [field, key] of [["faultStuck", "stuck"], ["faultLink", "link_lost"], ["faultThrottle", "throttle"]]) {

@@ -12,6 +12,10 @@ from typing import Any
 from warehouse.map import segment_distance
 from warehouse.robot import NODE_TOLERANCE, ROBOT_RADIUS
 
+# Simulator and dispatcher share the host's monotonic clock, including ROS processes.
+TELEMETRY_MAX_AGE = 0.5
+TELEMETRY_FUTURE_TOLERANCE = 0.1
+
 @dataclass
 class RobotRecord:
     state: dict[str, Any] = field(default_factory=dict)
@@ -160,7 +164,7 @@ class Dispatcher:
         self._last_plan_at = -math.inf
         self._last_now = 0.0
         self._safety_stop = False
-        self._confirmed_arrivals: set[str] = set()
+        self._confirmed_arrivals: dict[str, str] = {}
         self._events = deque(maxlen=256)
         self._last_planning_failure: str | None = None
         self.metrics = {"accepted_telemetry": 0, "discarded_telemetry": 0,
@@ -281,7 +285,7 @@ class Dispatcher:
         record = self.robots[robot_id]
         pending = record.protected_command or self._round.get(robot_id)
         if pending and record.state.get("node_id") == pending["path"][-1]:
-            self._confirmed_arrivals.add(robot_id)
+            self._confirmed_arrivals[robot_id] = pending["command_id"]
         record.link_state = "ONLINE"
         record.recovery_reason = ""
         record.protected_resources.clear()
@@ -321,6 +325,17 @@ class Dispatcher:
         if boot_id in robot.retired_boots or (boot_id == robot.boot_id and seq <= robot.seq):
             self.metrics["discarded_telemetry"] += 1
             return False
+        # Missing source time is supported only by legacy logical dispatcher callers;
+        # the API requires sim_time on every production telemetry message.
+        source_at = state.get("sim_time", now)
+        previous_source = robot.state.get("sim_time")
+        if (not isinstance(source_at, (int, float)) or isinstance(source_at, bool)
+                or not math.isfinite(source_at) or now - source_at > TELEMETRY_MAX_AGE
+                or source_at - now > TELEMETRY_FUTURE_TOLERANCE
+                or boot_id == robot.boot_id and isinstance(previous_source, (int, float))
+                and source_at < previous_source):
+            self.metrics["discarded_telemetry"] += 1
+            return False
         self._last_now = max(self._last_now, now)
         previous_error = robot.state.get("error")
         restarted = robot.boot_id is not None and boot_id != robot.boot_id
@@ -347,7 +362,7 @@ class Dispatcher:
             robot.link_state = "ONLINE"
             robot.recovery_reason = ""
         robot.state = dict(state)
-        robot.received_at, robot.seq, robot.boot_id = now, seq, boot_id
+        robot.received_at, robot.seq, robot.boot_id = min(now, source_at), seq, boot_id
         self.metrics["accepted_telemetry"] += 1
         error = state.get("error")
         if error and (error != previous_error or restarted):
@@ -491,10 +506,11 @@ class Dispatcher:
                 arrived = (state.get("node_id") == command["path"][-1]
                            and state.get("status") == "idle"
                            and (state.get("completed_command_id") == command["command_id"]
-                                or robot_id in self._confirmed_arrivals or refresh_round))
+                                or self._confirmed_arrivals.get(robot_id) == command["command_id"]
+                                or refresh_round))
                 if arrived:
                     self.metrics["completed_moves"] += 1
-                    self._confirmed_arrivals.discard(robot_id)
+                    self._confirmed_arrivals.pop(robot_id, None)
                 else:
                     unfinished[robot_id] = (self._command(robot_id, "move", path=command["path"])
                                             if refresh_round else command)

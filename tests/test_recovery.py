@@ -81,6 +81,45 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.dispatch.snapshot(2.2)["robots"]["robot1"]["link_state"], "OFFLINE")
         self.assertEqual(self.dispatch.metrics["link_recovery_events_total"], 0)
 
+    def test_delayed_increasing_sequences_cannot_restore_link_or_release_resources(self):
+        original = self.start_transition()
+        queued = [self.world.snapshot(stamp)[0] for stamp in (0.2, 0.3, 0.4)]
+        self.lose_first()
+        previous = copy.deepcopy(self.dispatch.robots["robot1"].state)
+        for offset, state in enumerate(queued):
+            now = 2.1 + offset / 10
+            self.assertFalse(self.dispatch.ingest(state, now))
+            self.publish(now, "robot2")
+            self.assertTrue(all(c["type"] == "stop" for c in self.dispatch.tick(now)))
+            snapshot = self.dispatch.snapshot(now)
+            self.assertEqual(snapshot["robots"]["robot1"]["link_state"], "OFFLINE")
+            self.assertTrue(set(original["path"]) <= set(snapshot["reservations"]["robot1"]))
+        self.assertEqual(self.dispatch.robots["robot1"].state, previous)
+        self.assertEqual(self.dispatch.metrics["link_recovery_events_total"], 0)
+        self.publish(2.4)
+        self.dispatch.tick(2.4)
+        self.assertEqual(self.dispatch.robots["robot1"].link_state, "ONLINE")
+
+    def test_source_timestamp_is_finite_bounded_and_does_not_run_backwards(self):
+        for stamp in (math.nan, math.inf, True, "0.1", 0.201):
+            with self.subTest(stamp=stamp):
+                state = self.world.snapshot(0.1)[0]
+                state["sim_time"] = stamp
+                self.assertFalse(self.dispatch.ingest(state, 0.1))
+        self.publish(0.2)
+        state = self.world.snapshot(0.3)[0]
+        state["sim_time"] = 0.1
+        self.assertFalse(self.dispatch.ingest(state, 0.3))
+        self.assertEqual(self.dispatch.robots["robot1"].received_at, 0.2)
+
+    def test_delivery_delay_does_not_extend_source_heartbeat(self):
+        state = self.world.snapshot(0.1)[0]
+        self.assertTrue(self.dispatch.ingest(state, 0.5))
+        self.assertEqual(self.dispatch.robots["robot1"].received_at, 0.1)
+        self.publish(1.61, "robot2")
+        self.dispatch.tick(1.61)
+        self.assertEqual(self.dispatch.robots["robot1"].link_state, "OFFLINE")
+
     def test_contradictory_pose_keeps_old_resources_and_blocks_resume(self):
         original = self.start_transition()
         self.lose_first()
@@ -157,6 +196,23 @@ class RecoveryTests(unittest.TestCase):
         moves = [c for c in self.dispatch.tick(0.3) if c["type"] == "move"]
         self.assertEqual(moves[0]["path"][0], "r0c0")
         self.assertFalse(self.dispatch.robots["robot1"].protected_resources)
+
+    def test_reboot_arrival_confirmation_cannot_complete_a_different_permit(self):
+        original = self.start_transition()
+        self.world.robots["robot1"] = RobotCore("robot1", self.world.map, original["path"][-1])
+        self.publish(0.2)
+        self.dispatch.tick(0.2)
+        self.dispatch.submit("robot1", "resume", now=0.3)
+        permit = next(c for c in self.dispatch.tick(0.3) if c["robot_id"] == "robot1" and c["type"] == "move")
+        self.assertNotEqual(permit["command_id"], original["command_id"])
+        destination = self.world.map.nodes[permit["path"][-1]]
+        self.publish(0.4, "robot1", node_id=destination.id, edge=None,
+                     pose={"x": destination.x, "y": destination.y, "yaw": 0},
+                     completed_command_id="not-the-current-permit")
+        self.publish(0.4, "robot2")
+        commands = self.dispatch.tick(0.4)
+        self.assertEqual(self.dispatch.metrics["completed_moves"], 0)
+        self.assertIn(permit, commands)
 
     def test_manual_repair_after_link_loss_does_not_enable_automatic_resume_off_graph(self):
         robot = self.world.robots["robot1"]

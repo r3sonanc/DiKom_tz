@@ -23,7 +23,10 @@ from warehouse.map import load_map, segment_distance
 from warehouse.robot import NODE_TOLERANCE, ROBOT_RADIUS
 from warehouse.transport import RosTransport
 
+# ROS launch creates loggers with propagation disabled; use process handlers.
+logging.getLogger(__package__).propagate = True
 LOG = logging.getLogger(__name__)
+LOG.propagate = True
 STATIC = Path(__file__).with_name("static")
 SNAPSHOT_PERIOD = 0.1
 MAP_NAMES = {"normal": "обычный склад", "hardcore": "узкие коридоры"}
@@ -144,7 +147,8 @@ class FleetRuntime:
         sequence = state.get("seq")
         boot_id = state.get("boot_id")
         if (isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 0
-                or not isinstance(boot_id, str) or not 1 <= len(boot_id) <= 128):
+                or not isinstance(boot_id, str) or not 1 <= len(boot_id) <= 128
+                or not _finite_number(state.get("sim_time"))):
             return False
         pose, velocity = state.get("pose"), state.get("velocity")
         if not isinstance(pose, dict) or not isinstance(velocity, dict):
