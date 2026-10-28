@@ -1,0 +1,197 @@
+{
+  "source_commit": "1df3febca5275c7b2dff730bfd7da4ddfd79f771",
+  "python": "3.12.3",
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "simulation_seconds": 600.0,
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "repeats": 3,
+  "memory_scope": "tracemalloc Python allocations, not process RSS/container/DDS",
+  "core_memory_scope": "tracing starts before WorldCore/Dispatcher creation; includes the direct-transport harness",
+  "snapshot_memory_scope": "tracing starts after make_runtime; excludes retained graph/state/map initialization; includes per-frame/cache allocations and timings list",
+  "core_transport": "direct in-memory commands and states, without ROS/DDS/HTTP",
+  "snapshots": "sequential virtual clients at one shared frame timestamp; excludes network I/O",
+  "serialization": "cached",
+  "source_sha256": {
+    "warehouse/dispatcher.py": "65a241c6ba64bc03cae4781b699601a1daa6d63b51500660f466690d3137215e",
+    "warehouse/api.py": "773799f83aa4aa099d68b684e7fcd5640d891218f9ed87d655419eeacee81b58",
+    "warehouse/robot.py": "5f61ed2ae7750fa6138cae3d66ad54447775332734f6aae393d0c2ba0a1bc025"
+  },
+  "tick_timing_scope": "stdlib perf_counter around each tick; summary from the last repetition; tracemalloc run excludes timing sample storage",
+  "core": [
+    {
+      "map": "normal",
+      "robots": 3,
+      "seed": 0,
+      "seconds_p50": 0.391914,
+      "seconds_p95": 0.409633,
+      "python_peak_kib": 149.293,
+      "completed_tasks": 55,
+      "planning_failures": 0,
+      "errors": [],
+      "dispatcher_tick_ms": {
+        "p50": 0.002956,
+        "p95": 0.006522,
+        "max": 0.66789,
+        "count": 6000
+      },
+      "planning": {
+        "last_seconds": 0.00025734699988788634,
+        "total_seconds": 0.0147285059999831,
+        "count": 54,
+        "mean_seconds": 0.0002727501111107981
+      }
+    },
+    {
+      "map": "normal",
+      "robots": 3,
+      "seed": 1,
+      "seconds_p50": 0.389356,
+      "seconds_p95": 0.393595,
+      "python_peak_kib": 296.131,
+      "completed_tasks": 50,
+      "planning_failures": 0,
+      "errors": [],
+      "dispatcher_tick_ms": {
+        "p50": 0.002895,
+        "p95": 0.00544,
+        "max": 2.684501,
+        "count": 6000
+      },
+      "planning": {
+        "last_seconds": 0.00023322299989558815,
+        "total_seconds": 0.014310260000684139,
+        "count": 45,
+        "mean_seconds": 0.00031800577779298085
+      }
+    },
+    {
+      "map": "normal",
+      "robots": 3,
+      "seed": 2,
+      "seconds_p50": 0.38519,
+      "seconds_p95": 0.387736,
+      "python_peak_kib": 347.799,
+      "completed_tasks": 54,
+      "planning_failures": 0,
+      "errors": [],
+      "dispatcher_tick_ms": {
+        "p50": 0.002895,
+        "p95": 0.00513,
+        "max": 3.250786,
+        "count": 6000
+      },
+      "planning": {
+        "last_seconds": 0.00018852400012292492,
+        "total_seconds": 0.015346541999861074,
+        "count": 50,
+        "mean_seconds": 0.0003069308399972215
+      }
+    },
+    {
+      "map": "hardcore",
+      "robots": 5,
+      "seed": 0,
+      "seconds_p50": 0.706909,
+      "seconds_p95": 0.710528,
+      "python_peak_kib": 168.524,
+      "completed_tasks": 37,
+      "planning_failures": 0,
+      "errors": [],
+      "dispatcher_tick_ms": {
+        "p50": 0.003236,
+        "p95": 0.006101,
+        "max": 50.425476,
+        "count": 6000
+      },
+      "planning": {
+        "last_seconds": 0.0009805189999951835,
+        "total_seconds": 0.23298141999975996,
+        "count": 35,
+        "mean_seconds": 0.006656611999993142
+      }
+    },
+    {
+      "map": "hardcore",
+      "robots": 5,
+      "seed": 1,
+      "seconds_p50": 0.537452,
+      "seconds_p95": 0.541447,
+      "python_peak_kib": 160.163,
+      "completed_tasks": 39,
+      "planning_failures": 0,
+      "errors": [],
+      "dispatcher_tick_ms": {
+        "p50": 0.003276,
+        "p95": 0.005541,
+        "max": 13.234052,
+        "count": 6000
+      },
+      "planning": {
+        "last_seconds": 0.0007560860001376568,
+        "total_seconds": 0.06449691399984658,
+        "count": 39,
+        "mean_seconds": 0.0016537670256370918
+      }
+    },
+    {
+      "map": "hardcore",
+      "robots": 5,
+      "seed": 2,
+      "seconds_p50": 0.742685,
+      "seconds_p95": 0.764165,
+      "python_peak_kib": 163.955,
+      "completed_tasks": 31,
+      "planning_failures": 1,
+      "errors": [],
+      "dispatcher_tick_ms": {
+        "p50": 0.003226,
+        "p95": 0.005811,
+        "max": 106.900472,
+        "count": 6000
+      },
+      "planning": {
+        "last_seconds": 0.001903303000062806,
+        "total_seconds": 0.2919745570006853,
+        "count": 34,
+        "mean_seconds": 0.00858748697060839
+      }
+    }
+  ],
+  "snapshot": [
+    {
+      "map": "normal",
+      "robots": 3,
+      "clients": 1,
+      "rounds": 200,
+      "frame_ms_p50": 0.058996,
+      "frame_ms_p95": 0.088768,
+      "python_peak_kib": 41.402,
+      "payload_characters": 4901
+    },
+    {
+      "map": "normal",
+      "robots": 3,
+      "clients": 10,
+      "rounds": 200,
+      "frame_ms_p50": 0.060825,
+      "frame_ms_p95": 0.093787,
+      "python_peak_kib": 32.982,
+      "payload_characters": 4901
+    },
+    {
+      "map": "normal",
+      "robots": 3,
+      "clients": 50,
+      "rounds": 200,
+      "frame_ms_p50": 0.066691,
+      "frame_ms_p95": 0.096312,
+      "python_peak_kib": 33.324,
+      "payload_characters": 4901
+    }
+  ],
+  "core_profile": "         6602092 function calls (6594532 primitive calls) in 1.916 seconds\n\n   Ordered by: cumulative time\n   List reduced from 99 to 18 due to restriction <18>\n\n   ncalls  tottime  percall  cumtime  percall filename:lineno(function)\n        1    0.041    0.041    1.916    1.916 benchmark.py:36(simulate)\n    30000    0.057    0.000    0.771    0.000 robot.py:328(tick)\n   150000    0.160    0.000    0.696    0.000 robot.py:205(tick)\n     6000    0.030    0.000    0.605    0.000 dispatcher.py:460(tick)\n       35    0.000    0.000    0.553    0.016 dispatcher.py:566(_build_schedule)\n       35    0.000    0.000    0.553    0.016 dispatcher.py:586(_plan_schedule)\n       35    0.009    0.000    0.547    0.016 dispatcher.py:54(plan)\n      926    0.294    0.000    0.537    0.001 dispatcher.py:93(_search)\n    57240    0.074    0.000    0.438    0.000 robot.py:189(_integrate)\n    57599    0.108    0.000    0.332    0.000 robot.py:177(_collision)\n821258/813698    0.177    0.000    0.293    0.000 {built-in method builtins.min}\n     6000    0.017    0.000    0.259    0.000 robot.py:342(telemetry)\n    23315    0.013    0.000    0.238    0.000 robot.py:332(_state)\n    23315    0.028    0.000    0.222    0.000 robot.py:256(telemetry)\n   237956    0.113    0.000    0.194    0.000 map.py:7(segment_distance)\n    23315    0.009    0.000    0.194    0.000 robot.py:57(node_id)\n    23315    0.015    0.000    0.185    0.000 map.py:42(nearest_node)\n    23315    0.101    0.000    0.155    0.000 dispatcher.py:313(ingest)\n\n\n"
+}

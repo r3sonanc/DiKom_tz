@@ -41,3 +41,31 @@ LINK_RECOVERED обозначает приём свежего состояния
 а не даёт гарантии для произвольного оборудования и всех вещественных входов.
 Предпосылки геометрической безопасности сохраняются в [SAFETY.md](SAFETY.md).
 Фактические команды, результаты и ограничения измерений — в [VALIDATION.md](VALIDATION.md).
+
+## Где проверяется P0/P1
+
+Имена ниже — реальные тесты. Файлы: [recovery](../tests/test_recovery.py),
+[observability](../tests/test_observability.py), [safety](../tests/test_safety.py).
+
+| Критерий | Проверка |
+|---|---|
+| Lease, оба конца ребра, резервы после повторных timeout, глобальная остановка | `test_loss_in_an_edge_keeps_both_endpoints_and_local_lease_stops_motion`; живой `live_smoke.py --ros` |
+| RECOVERING до подтверждения остановки | `test_fresh_moving_state_remains_recovering_until_stopped_state_is_confirmed` |
+| Неверная поза / чужой приказ блокируют resume | `test_contradictory_pose_keeps_old_resources_and_blocks_resume`, `test_unknown_active_command_cannot_restart_a_transition` |
+| Старые seq/boot и задержанные возрастающие seq не снимают резервы | `test_old_or_duplicate_state_does_not_restore_the_link`, `test_delayed_increasing_sequences_cannot_restore_link_or_release_resources` |
+| Возраст состояния ≤0,5 с, будущее ≤0,1 с; heartbeat от времени источника | `test_source_timestamp_is_finite_bounded_and_does_not_run_backwards`, `test_delivery_delay_does_not_extend_source_heartbeat` |
+| Reboot: резервы, та же миссия, явный resume | `test_reboot_in_transition_preserves_mission_and_requires_explicit_resume`; `ros_recovery_smoke.py` через DDS |
+| Старое подтверждение не завершает новый приказ | `test_reboot_arrival_confirmation_cannot_complete_a_different_permit` |
+| Завершённая команда не выполняется повторно | `test_a_completed_move_is_not_executed_again_after_duplicate_delivery`, `test_completed_transition_after_loss_does_not_create_another_mission_or_permit` |
+| Узкий проход, независимая геометрия | Полный `test_safety.py`, включая перебор 288 назначений |
+| Потеря/возврат учитываются один раз; startup не потеря | `test_outage_counts_each_link_once_and_one_stop_for_whole_fleet`, `test_startup_and_snapshot_reads_do_not_create_outage_events`, `test_recovery_counter_counts_the_first_fresh_packet_once_not_duplicates` |
+| Ошибка и подтверждённый сброс без дублей | `test_error_transitions_are_counted_once_and_clear_requires_confirmed_state`, `test_duplicate_error_telemetry_does_not_duplicate_logs_or_metrics` |
+| UTC-логи, поля UI, INFO/WARNING перехватываются | `test_structured_link_events_and_counters_do_not_repeat_on_each_tick`, `test_log_records_keep_utc_fields_on_one_line`, `test_info_events_reach_process_handlers_once` |
+| Формат метрик, актуальный offline, реальное время планирования | `test_metrics_expose_new_counters_and_a_live_offline_gauge`, `test_planning_duration_covers_the_whole_attempt_and_failure_log_is_deduplicated` |
+| Health 200 при частичной потере, 503 после отсутствия всех ≥3 с | `test_partial_fleet_health_is_independent_from_service_status`, `test_health_returns_503_after_all_current_world_telemetry_goes_stale`; оба случая в `live_smoke.py` |
+| Контроллер/транспорт не работают, начальной телеметрии нет | `test_health_checks_controller_and_transport_lifecycle`, `test_health_is_503_until_initial_world_has_telemetry` |
+
+Допуск свежести предполагает общий монотонный clock domain текущего симулятора.
+Для разных физических хостов нужны отдельные требования синхронизации и протокола;
+рост `seq` сам по себе не подтверждает актуальность положения. Критерии не обещают
+реакцию в заданные миллисекунды при остановке процесса ОС.

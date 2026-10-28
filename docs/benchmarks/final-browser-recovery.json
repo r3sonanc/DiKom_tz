@@ -1,0 +1,60 @@
+{
+  "source_commit": "1df3febca5275c7b2dff730bfd7da4ddfd79f771",
+  "browser": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+  "ready": {
+    "link_state": "RECOVERING",
+    "recovery_ready": true,
+    "paused": true,
+    "safety_stop": true,
+    "resume_disabled": false
+  },
+  "blocked": {
+    "status": 409,
+    "body": {
+      "detail": "РџРµСЂРµРґ РІРѕР·РѕР±РЅРѕРІР»РµРЅРёРµРј РґРѕР¶РґРёС‚РµСЃСЊ СЃРІРµР¶РµР№ С‚РµР»РµРјРµС‚СЂРёРё СЂРѕР±РѕС‚Р° robot2"
+    },
+    "resume_disabled": true,
+    "title": "Р РѕР±РѕС‚ 2: РќРµС‚ СЃРІРµР¶РµР№ С‚РµР»РµРјРµС‚СЂРёРё"
+  },
+  "all_ready": {
+    "disabled": false,
+    "title": "Р’РѕР·РѕР±РЅРѕРІРёС‚СЊ РІРµСЃСЊ РїР°СЂРє; СЃРµСЂРІРµСЂ РїРѕРІС‚РѕСЂРЅРѕ РїСЂРѕРІРµСЂРёС‚ Р±РµР·РѕРїР°СЃРЅРѕСЃС‚СЊ"
+  },
+  "after_resume": {
+    "robots": [
+      {
+        "id": "robot1",
+        "link_state": "ONLINE",
+        "node_id": "r2c4",
+        "error": null
+      },
+      {
+        "id": "robot2",
+        "link_state": "ONLINE",
+        "node_id": "p2",
+        "error": null
+      }
+    ],
+    "completed_tasks": 1,
+    "paused": false,
+    "safety_stop": false,
+    "goal_count": 0
+  },
+  "ok": true,
+  "setup": "Actual production create_app/UI and SimulatorNode via DDS, isolated ROS_DOMAIN_ID=91, http://localhost:8001; local test file triggers robot1 reboot mid-edge",
+  "actions": [
+    "UI Move to r2c4 and local file reboot trigger",
+    "Observe RECOVERING with recovery_ready and enabled Resume",
+    "Lose robot2 link: disabled button with reason and direct backend resume HTTP 409",
+    "Restore robot2, click actual Resume button, original goal completes once without errors"
+  ],
+  "source_sha256": {
+    "warehouse/api.py": "773799f83aa4aa099d68b684e7fcd5640d891218f9ed87d655419eeacee81b58",
+    "warehouse/dispatcher.py": "65a241c6ba64bc03cae4781b699601a1daa6d63b51500660f466690d3137215e",
+    "warehouse/robot.py": "5f61ed2ae7750fa6138cae3d66ad54447775332734f6aae393d0c2ba0a1bc025",
+    "warehouse/transport.py": "d4040a6e4b811e590790ff7694ad2865862ed2110983fdb14d7118f8e1411b76",
+    "warehouse/static/app.js": "6b135141d4af9aa5d58c54b2fc2380ef9913630bf2e1eed6a8746460547477c4",
+    "warehouse/static/index.html": "ef30587a8754a738032f2fa2f5cfecbe0bc076aadc57f395ad17b932bd79414a",
+    "tools/ros_recovery_smoke.py": "eb57195eb8dceeeb656d5ea6bb7733f7a0a27645064068ff8b9ffbca56dc37f4"
+  }
+}

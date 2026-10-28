@@ -9,6 +9,92 @@
 
 Обоснование защиты от столкновений и её предпосылки находятся в [SAFETY.md](SAFETY.md).
 
+## Финальная проверка 28 октября 2026 года
+
+Проверенные исходники: [`1df3febca5275c7b2dff730bfd7da4ddfd79f771`](https://github.com/r3sonanc/DiKom_tz/commit/1df3febca5275c7b2dff730bfd7da4ddfd79f771).
+Все финальные отчёты ниже относятся к этому SHA. Следующий коммит добавляет
+документацию и отчёты, сохраняя проверенный исполняемый код.
+
+| Проверка | Фактический результат и отчёт |
+|---|---|
+| Docker test stage и полный pytest | **133 passed, 0 failed**, 16,58 с; одно предупреждение Starlette/AnyIO. [final-pytest.txt](benchmarks/final-pytest.txt) |
+| GitHub Actions, Ubuntu 24.04 | **success**: [запуск 40677029966](https://github.com/r3sonanc/DiKom_tz/actions/runs/40677029966); сборка, Python/ROS-импорты, весь pytest |
+| Runtime из того же коммита | `docker compose up --build -d --wait`: healthy; обнаружены `/warehouse_dispatcher`, `/warehouse_simulator` |
+| Полный HTTP/ROS2/WebSocket smoke | **ok=true**, 9 проверок: движение, два наблюдателя, потеря связи/резервы/возврат, ошибка/сброс, ручное управление, throttle, пять роботов в «Тёмном цехе», частичная потеря HTTP 200 и полная HTTP 503. [final-ubuntu-smoke.json](benchmarks/final-ubuntu-smoke.json) |
+| Reboot через настоящий DDS, отдельный ROS domain 91 | **ok=true**, 4 проверки: резервы и миссия сохранены, RECOVERING + recovery_ready, старый boot отвергнут, операторский resume завершает исходную миссию один раз. [final-reboot-smoke.json](benchmarks/final-reboot-smoke.json) |
+| Настоящий браузер Edge, тот же интерфейс/API и ROS2 | RECOVERING/ready разрешает кнопку; потеря robot2 блокирует её с причиной. Прямой запрос resume получает HTTP 409. После восстановления и клика исходная миссия завершена один раз, ошибок нет. [final-browser-recovery.json](benchmarks/final-browser-recovery.json) |
+| Контроль производительности того же SHA | 600 модельных секунд, seeds 0/1/2, три повтора, 1/10/50 клиентов. [final-observability.json](benchmarks/final-observability.json) |
+
+В живом smoke ожидание OFFLINE дополнено ожиданием зарегистрированного счётчика:
+снимок может показать истечение heartbeat между тиками контроллера. Проверка
+однократного учёта событий сохранена. Исправление логирования включает propagation
+только для логгеров пакета приложения: ROS LaunchLogger прежде отключал передачу
+записей обработчику pytest. Структурированные поля и все прежние проверки сохранены.
+
+Учебные копии API, диспетчера, транспорта, JS и HTML сверены с оригиналами:
+каждая непустая строка и метка L совпадают. Основной источник истины — `warehouse/`.
+Точная привязка критериев к тестам — в [ACCEPTANCE.md](ACCEPTANCE.md#где-проверяется-p0p1).
+Предыдущие `pytest.txt`, `ubuntu-smoke.json`, `before.json`, `after.json`,
+`observability.json` сохранены как исторические. Промежуточный
+`reboot-smoke-working.json` удалён; его заменяет финальный отчёт с точным SHA.
+
+### Как повторить ROS2 и браузерный reboot
+
+После сборки test stage и запуска compose:
+
+```sh
+docker compose exec warehouse bash -lc "source /workspace/install/setup.bash && python /workspace/src/warehouse_sim/tools/live_smoke.py --ros --source-commit 1df3febca5275c7b2dff730bfd7da4ddfd79f771 --output /tmp/live.json"
+docker compose cp warehouse:/tmp/live.json docs/benchmarks/final-ubuntu-smoke.json
+docker compose exec -e ROS_DOMAIN_ID=91 warehouse bash -lc "source /workspace/install/setup.bash && python /workspace/src/warehouse_sim/tools/ros_recovery_smoke.py --source-commit 1df3febca5275c7b2dff730bfd7da4ddfd79f771 --output /tmp/reboot.json"
+docker compose cp warehouse:/tmp/reboot.json docs/benchmarks/final-reboot-smoke.json
+```
+
+Для браузера запустите отдельный стенд (не основной порт 8000):
+
+```sh
+docker run --rm --name dikom-browser-reboot -p 127.0.0.1:8001:8001 -e ROS_DOMAIN_ID=91 dikom-tests bash -lc "source /workspace/install/setup.bash && python /workspace/src/warehouse_sim/tools/ros_recovery_smoke.py --browser-port 8001"
+```
+
+Откройте `http://localhost:8001`, выберите robot1 и цель `r2c4`. Во втором
+терминале выполните `docker exec dikom-browser-reboot touch /tmp/dikom-browser-reboot`,
+нажмите «Отправить». Файл-триггер заменяет экземпляр робота посреди ребра в тестовом
+стенде; производственный API не получает новых команд reboot.
+Покажите RECOVERING, неопределённую позицию, сохранённые резервы и доступный resume.
+Включите потерю связи у robot2: кнопка блокируется с причиной. После возврата
+связи нажмите «Возобновить» и дождитесь одной завершённой миссии. Проверить
+повторную защиту backend можно прямым POST resume при недоступном robot2:
+сервер вернёт 409. Завершение стенда: `docker stop dikom-browser-reboot`.
+
+Ограничения: двумерная кинематика, без массы/инерции/тормозного пути; собственный
+JSON поверх ROS2 вместо полного VDA5050; состояние только в RAM. Свежесть
+sim_time предполагает общий монотонный clock domain текущего симулятора.
+Проверенные сценарии не являются универсальной гарантией для физического флота.
+
+### Контроль производительности после финальных исправлений
+
+| Карта / seed | Миссий | Тик p50 / p95 / max, мс | Среднее планирование, мс | Пик Python, КиБ |
+|---|---:|---|---:|---:|
+| normal / 0 | 55 | 0,002956 / 0,006522 / 0,667890 | 0,273 | 149,293 |
+| normal / 1 | 50 | 0,002895 / 0,005440 / 2,684501 | 0,318 | 296,131 |
+| normal / 2 | 54 | 0,002895 / 0,005130 / 3,250786 | 0,307 | 347,799 |
+| hardcore / 0 | 37 | 0,003236 / 0,006101 / 50,425476 | 6,657 | 168,524 |
+| hardcore / 1 | 39 | 0,003276 / 0,005541 / 13,234052 | 1,654 | 160,163 |
+| hardcore / 2 | 31 | 0,003226 / 0,005811 / 106,900472 | 8,587 | 163,955 |
+
+Число миссий, ошибок (0) и безопасных отказов планирования совпало с `before.json`,
+`after.json` и `observability.json`: один отказ поиска в hardcore / seed 2.
+Время всего прямого модельного прогона относительно `observability.json` изменилось
+примерно на 0–4%; это результаты измерений на данном хосте, без обещания ускорения.
+Редкий тик 106,9 мс превышает период контроллера 100 мс. Это известное ограничение
+по задержке планирования; жёсткое соблюдение периода не гарантируется.
+Планировщик и согласованные раунды сохранены.
+
+Подготовка общего WebSocket JSON для 1/10/50 условных клиентов: p50
+0,058996 / 0,060825 / 0,066691 мс; p95 0,088768 / 0,093787 / 0,096312 мс.
+Сеть исключена. Пики временных выделений: 41,402 / 32,982 / 33,324 КиБ;
+это `tracemalloc`, не RAM/RSS. Сравнение старого кэширования ниже остаётся
+историческим и не подменяет финальный замер.
+
 ## Историческая проверка до доработки наблюдаемости
 
 Зафиксированный прогон 27 октября 2026 года: **83 passed за 15,75 с**, без ошибок.

@@ -1,0 +1,79 @@
+{
+  "ok": true,
+  "checks": [
+    "actual ROS node discovery",
+    "HTTP -> dispatcher -> ROS -> physics -> telemetry: move completed",
+    "two independent WebSocket observers received the completed movement",
+    "bidirectional link loss, safe pause, retained edge, recovery",
+    "partial fleet loss preserves service HTTP 200 and counts one loss/recovery episode",
+    "stuck/clear and manual turn/stop/resume",
+    "throttled telemetry and restoration",
+    "all robot telemetry lost: service HTTP 503 while WebSocket remains observable",
+    "hardcore map, five robots, dark-factory tasks completed"
+  ],
+  "url": "http://127.0.0.1:8000",
+  "source_commit": "1df3febca5275c7b2dff730bfd7da4ddfd79f771",
+  "source_sha256": {
+    "warehouse/api.py": "773799f83aa4aa099d68b684e7fcd5640d891218f9ed87d655419eeacee81b58",
+    "warehouse/dispatcher.py": "65a241c6ba64bc03cae4781b699601a1daa6d63b51500660f466690d3137215e",
+    "warehouse/robot.py": "5f61ed2ae7750fa6138cae3d66ad54447775332734f6aae393d0c2ba0a1bc025"
+  },
+  "python": "3.12.3",
+  "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n",
+  "observability": {
+    "partial_loss_health": {
+      "ok": true,
+      "world_id": "d1bae2ffc76a43b9bab1bd11548ef488",
+      "controller": "running",
+      "transport": "ROS2 Jazzy",
+      "service": {
+        "controller_running": true,
+        "transport_healthy": true,
+        "telemetry_recent": true,
+        "telemetry_age": 0.05813698999986627,
+        "initializing": false
+      },
+      "fleet": {
+        "total": 2,
+        "online": 1,
+        "offline": 1,
+        "recovering": 0,
+        "errors": 0,
+        "safety_stop": true
+      }
+    },
+    "all_offline_health": {
+      "ok": false,
+      "world_id": "d1bae2ffc76a43b9bab1bd11548ef488",
+      "controller": "running",
+      "transport": "ROS2 Jazzy",
+      "service": {
+        "controller_running": true,
+        "transport_healthy": true,
+        "telemetry_recent": false,
+        "telemetry_age": 3.053941879999911,
+        "initializing": false
+      },
+      "fleet": {
+        "total": 2,
+        "online": 0,
+        "offline": 2,
+        "recovering": 0,
+        "errors": 0,
+        "safety_stop": true
+      }
+    },
+    "event_codes": [
+      "COMMAND_ACCEPTED",
+      "ERROR_CLEARED",
+      "FAULT_INJECTION_CHANGED",
+      "FLEET_RESUMED",
+      "FLEET_SAFETY_STOP",
+      "LINK_LOST",
+      "LINK_RECOVERED",
+      "ROBOT_ERROR",
+      "WORLD_RESET"
+    ]
+  }
+}

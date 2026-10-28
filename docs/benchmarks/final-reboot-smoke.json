@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "source_commit": "95d2aee28fd7039da0a57117446c80fee8155431",
+  "source_commit": "1df3febca5275c7b2dff730bfd7da4ddfd79f771",
   "ros_domain_id": 91,
   "checks": [
     "two actual ROS nodes discovered and current world synchronized",
@@ -36,7 +36,7 @@
     "robots": {
       "robot1": {
         "online": true,
-        "age": 0.05998359900002015,
+        "age": 0.10035249199995633,
         "goal": "r2c4",
         "link_state": "RECOVERING",
         "recovery_reason": "Положение подтверждено; требуется возобновление оператором",
@@ -44,7 +44,7 @@
       },
       "robot2": {
         "online": true,
-        "age": 0.05998359900002015,
+        "age": 0.10035249199995633,
         "goal": null,
         "link_state": "ONLINE",
         "recovery_reason": "",
@@ -52,9 +52,9 @@
       }
     },
     "metrics": {
-      "accepted_telemetry": 12,
+      "accepted_telemetry": 16,
       "discarded_telemetry": 0,
-      "commands": 19,
+      "commands": 22,
       "completed_moves": 0,
       "plans": 1,
       "planning_failures": 0,
@@ -64,8 +64,8 @@
       "link_recovery_events_total": 0,
       "fleet_safety_stops_total": 1,
       "robot_errors_total": 0,
-      "planning_duration_seconds": 0.00016182900003514078,
-      "planning_duration_seconds_sum": 0.00016182900003514078,
+      "planning_duration_seconds": 0.00013313299996298156,
+      "planning_duration_seconds_sum": 0.00013313299996298156,
       "planning_duration_seconds_count": 1,
       "offline_robots": 0
     },
@@ -75,9 +75,9 @@
     }
   },
   "final_metrics": {
-    "accepted_telemetry": 186,
+    "accepted_telemetry": 190,
     "discarded_telemetry": 1,
-    "commands": 109,
+    "commands": 111,
     "completed_moves": 3,
     "plans": 2,
     "planning_failures": 0,
@@ -87,8 +87,8 @@
     "link_recovery_events_total": 0,
     "fleet_safety_stops_total": 1,
     "robot_errors_total": 0,
-    "planning_duration_seconds": 0.0001538530000289029,
-    "planning_duration_seconds_sum": 0.0003156820000640437,
+    "planning_duration_seconds": 0.00012836400014748506,
+    "planning_duration_seconds_sum": 0.0002614970001104666,
     "planning_duration_seconds_count": 2,
     "offline_robots": 0
   }

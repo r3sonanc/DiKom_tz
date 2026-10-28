@@ -1,6 +1,6 @@
-Tested source commit: 95d2aee28fd7039da0a57117446c80fee8155431
+Tested source commit: 1df3febca5275c7b2dff730bfd7da4ddfd79f771
 Command: docker run --rm dikom-tests
-UTC: 2026-10-28T10:39:49.5389222Z
+UTC: 2026-10-28T11:03:50.4950611Z
 ........................................................................ [ 54%]
 .............................................................            [100%]
 =============================== warnings summary ===============================
@@ -8,5 +8,5 @@ UTC: 2026-10-28T10:39:49.5389222Z
   Warning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-133 passed, 1 warning in 16.46s
+133 passed, 1 warning in 16.58s
 Exit code: 0
