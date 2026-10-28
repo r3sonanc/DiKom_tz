@@ -101,7 +101,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.dispatch.robots["robot1"].link_state, "ONLINE")
 
     def test_source_timestamp_is_finite_bounded_and_does_not_run_backwards(self):
-        for stamp in (math.nan, math.inf, True, "0.1", 0.201):
+        for stamp in (math.nan, math.inf, True, "0.1", 0.201, 10 ** 400, -(10 ** 400)):
             with self.subTest(stamp=stamp):
                 state = self.world.snapshot(0.1)[0]
                 state["sim_time"] = stamp

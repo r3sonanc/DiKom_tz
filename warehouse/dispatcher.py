@@ -330,8 +330,8 @@ class Dispatcher:
         source_at = state.get("sim_time", now)
         previous_source = robot.state.get("sim_time")
         if (not isinstance(source_at, (int, float)) or isinstance(source_at, bool)
-                or not math.isfinite(source_at) or now - source_at > TELEMETRY_MAX_AGE
-                or source_at - now > TELEMETRY_FUTURE_TOLERANCE
+                or source_at < now - TELEMETRY_MAX_AGE
+                or source_at > now + TELEMETRY_FUTURE_TOLERANCE or not math.isfinite(source_at)
                 or boot_id == robot.boot_id and isinstance(previous_source, (int, float))
                 and source_at < previous_source):
             self.metrics["discarded_telemetry"] += 1

@@ -1,0 +1,12 @@
+Tested source commit: 95d2aee28fd7039da0a57117446c80fee8155431
+Command: docker run --rm dikom-tests
+UTC: 2026-10-28T10:39:49.5389222Z
+........................................................................ [ 54%]
+.............................................................            [100%]
+=============================== warnings summary ===============================
+../../../opt/venv/lib/python3.12/site-packages/starlette/testclient.py:37
+  Warning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+133 passed, 1 warning in 16.46s
+Exit code: 0
