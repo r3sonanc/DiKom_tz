@@ -1,5 +1,3 @@
-"""Exercise a robot reboot through real DDS in an isolated ROS_DOMAIN_ID."""
-
 import argparse
 import copy
 import hashlib
@@ -23,7 +21,6 @@ from warehouse.transport import RosTransport
 
 
 def serve_browser(simulator, port):
-    """Run the production UI; a local test file triggers the simulated reboot."""
     import uvicorn
     from rclpy.executors import ExternalShutdownException
 

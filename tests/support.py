@@ -1,5 +1,3 @@
-"""Deterministic clocks and transport for core integration tests."""
-
 import math
 
 from warehouse.dispatcher import Dispatcher

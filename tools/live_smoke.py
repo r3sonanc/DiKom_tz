@@ -1,5 +1,3 @@
-"""Check a running ROS-backed application; this replaces its simulation world."""
-
 import argparse
 import hashlib
 import json
@@ -77,7 +75,6 @@ def main():
     command("move", target="r2c4")
     wait(lambda s: robot(s)["node_id"] is None)
     call("/api/robots/robot1/faults", {"link_lost": True})
-    # A snapshot can observe timeout just before the controller counts that transition.
     unavailable = wait(lambda s: not robot(s)["connected"] and s["dispatcher"]["safety_stop"]
                        and s["metrics"]["link_loss_events_total"] == 1)
     assert robot(unavailable)["link_state"] == "OFFLINE"

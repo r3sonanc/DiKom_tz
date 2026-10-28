@@ -1,6 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="ДиКом">
   <title>ДиКом</title>
   <rect width="128" height="128" rx="18" fill="#D52C3B"/>
-  <!-- Simplified vector mark based on the Д from the supplied logo -->
   <path fill="#FFFFFF" fill-rule="evenodd" d="M 33 17 H 100 V 30 H 92 V 91 H 104 V 112 H 82 L 79 101 H 47 L 44 112 H 22 V 91 H 30 C 36 74 40 52 43 30 H 33 Z M 57 34 L 49 90 H 74 V 34 Z"/>
 </svg>

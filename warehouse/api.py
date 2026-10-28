@@ -23,7 +23,6 @@ from warehouse.map import load_map, segment_distance
 from warehouse.robot import NODE_TOLERANCE, ROBOT_RADIUS
 from warehouse.transport import RosTransport
 
-# ROS launch creates loggers with propagation disabled; use process handlers.
 logging.getLogger(__package__).propagate = True
 LOG = logging.getLogger(__name__)
 LOG.propagate = True
@@ -479,7 +478,7 @@ def create_app(transport=None, map_name=None, robots=None):
         runtime.send({"type": "fault", "robot_id": robot_id, **runtime.faults[robot_id]})
         if changes:
             description = "; ".join(
-                f"{FAULT_NAMES[name]} — {'включено' if enabled else 'выключено'}"
+                f"{FAULT_NAMES[name]} - {'включено' if enabled else 'выключено'}"
                 for name, enabled in changes.items()
             )
             runtime.event(f"Робот {robot_id.removeprefix('robot')}: {description}", "warning",

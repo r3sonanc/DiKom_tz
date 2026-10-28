@@ -20,7 +20,7 @@
   const fleetRows = new Map();
 
   function setText(id, value) { $(id).textContent = String(value); }
-  function number(value, digits = 2) { return value != null && Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : "—"; }
+  function number(value, digits = 2) { return value != null && Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : "-"; }
   function selectedRobot() { return state.robots.find((robot) => robot.id === state.selectedId); }
   function robotColor(id) { return colors[Math.max(0, state.robots.findIndex((robot) => robot.id === id)) % colors.length]; }
   function robotName(id) { return String(id).replace(/^robot(\d+)$/i, "Робот $1"); }
@@ -52,7 +52,7 @@
   }
   function positionUncertain(robot) { return !state.connected || Boolean(robot.position_stale) || !robotReady(robot); }
   function positionText(robot) {
-    if (robot.last_seen == null && !robotReady(robot)) return "—";
+    if (robot.last_seen == null && !robotReady(robot)) return "-";
     const suffix = positionUncertain(robot) ? robotLinkState(robot) === "RECOVERING" ? " · не подтверждена" : " · последняя" : "";
     return `${number(robot.x)} / ${number(robot.y)}${suffix}`;
   }
@@ -160,13 +160,13 @@
     $("robotAvatar").style.color = robot ? robotColor(robot.id) : "";
     $("selectedRobotState").title = robot ? positionReason(robot) : "";
     $("robotStateDot").className = `status-dot ${robot ? robotLinkState(robot) === "OFFLINE" ? "offline" : robotLinkState(robot) === "RECOVERING" ? "recovering" : robot.error ? "error" : "online" : ""}`;
-    setText("positionValue", robot ? positionText(robot) : "—");
+    setText("positionValue", robot ? positionText(robot) : "-");
     $("positionValue").classList.toggle("position-stale", Boolean(robot && positionUncertain(robot)));
     $("positionValue").title = robot ? positionReason(robot) : "";
-    setText("headingValue", robot ? `${number(((robot.theta * 180 / Math.PI) % 360 + 360) % 360, 1)}°` : "—");
-    setText("speedValue", robot ? number(robot.v) : "—");
-    setText("angularValue", robot ? number(robot.omega) : "—");
-    setText("orderValue", robot ? orderText(robot) : "—");
+    setText("headingValue", robot ? `${number(((robot.theta * 180 / Math.PI) % 360 + 360) % 360, 1)}°` : "-");
+    setText("speedValue", robot ? number(robot.v) : "-");
+    setText("angularValue", robot ? number(robot.omega) : "-");
+    setText("orderValue", robot ? orderText(robot) : "-");
     setText("routeValue", robot?.route.length ? robot.route.join(" → ") : "Маршрут не назначен");
     $("robotError").hidden = !robot?.error;
     $("robotError").textContent = errorText(robot?.error);
@@ -264,7 +264,7 @@
     updateRobotCount();
     const seconds = Number(snapshot.sim_time ?? snapshot.time ?? 0);
     const timestamp = new Date(snapshot.time);
-    setText("simulationTime", Number.isFinite(seconds) ? `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}` : !Number.isNaN(timestamp.getTime()) ? timestamp.toLocaleTimeString("ru-RU", { hour12: false }) : "—");
+    setText("simulationTime", Number.isFinite(seconds) ? `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}` : !Number.isNaN(timestamp.getTime()) ? timestamp.toLocaleTimeString("ru-RU", { hour12: false }) : "-");
     for (const entry of snapshot.events || []) {
       const key = `${entry.time}|${entry.level}|${entry.message}`;
       if (state.seenEvents.has(key)) continue;
@@ -471,7 +471,7 @@
     $(id).addEventListener("change", async (event) => {
       const robot = selectedRobot(); if (!robot) return;
       const enabled = event.target.checked;
-      try { await request(`/api/robots/${encodeURIComponent(robot.id)}/faults`, { [field]: enabled }); addEvent(`${robot.id}: ${faultLabels[field].toLowerCase()} ${enabled ? "— включено" : "— выключено"}`, enabled ? "warning" : "info"); }
+      try { await request(`/api/robots/${encodeURIComponent(robot.id)}/faults`, { [field]: enabled }); addEvent(`${robot.id}: ${faultLabels[field].toLowerCase()} ${enabled ? "- включено" : "- выключено"}`, enabled ? "warning" : "info"); }
       catch (error) { event.target.checked = !enabled; toast(error.message, true); }
     });
   }

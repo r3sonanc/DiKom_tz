@@ -1,5 +1,3 @@
-"""Safety, liveness and communication regression tests for the pure dispatcher."""
-
 import random
 import unittest
 from itertools import permutations
@@ -228,8 +226,6 @@ class DispatcherTests(unittest.TestCase):
             self.assertGreaterEqual(self.dispatcher.planner.distance(source, goal), 5)
 
     def test_difficult_joint_operator_orders_make_progress_in_stages(self):
-        # This feasible assignment defeats the fixed-priority joint search.
-        # The fallback must preserve all orders and finish at least one of them.
         starts = {"a": "r2c2", "b": "p2", "c": "r4c5", "d": "r1c5", "e": "p3"}
         goals = {"a": "r1c0", "b": "r2c0", "c": "p1", "d": "r0c5", "e": "r1c2"}
         self.assertIsNone(CooperativePlanner(self.map).plan(starts, goals))

@@ -1,5 +1,3 @@
-"""Service/fleet health and transition-based observability contracts."""
-
 import copy
 import json
 import logging
@@ -40,7 +38,6 @@ def prepared_app(robots=2, now=10.0):
     return app, runtime, transport, world
 
 def fixed_http_clock(monkeypatch, now):
-    # Replace only the API module's clock; keep TestClient/asyncio clocks real.
     monkeypatch.setattr("warehouse.api.time", SimpleNamespace(monotonic=lambda: now))
 
 def lose_first_link(runtime, transport, world):
@@ -310,7 +307,6 @@ def test_snapshot_separates_recovering_from_freshness_and_stale_position():
     assert robot["position_stale"] is True
     assert robot["recovery_ready"] is False
     assert robot["recovery_reason"]
-    # Returned snapshots still have no mutable aliases into the shared cache.
     snapshot["robots"][0]["recovery_reason"] = "tampered"
     assert json.loads(runtime.snapshot_json(10.1))["robots"][0]["recovery_reason"] != "tampered"
 

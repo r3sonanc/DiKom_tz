@@ -1,5 +1,3 @@
-"""Reproducible CPU/Python-allocation measurements; no ROS or test dependencies."""
-
 import argparse
 import cProfile
 import hashlib
@@ -16,9 +14,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from warehouse.api import FleetRuntime  # noqa: E402
-from warehouse.dispatcher import Dispatcher  # noqa: E402
-from warehouse.robot import WorldCore  # noqa: E402
+from warehouse.api import FleetRuntime
+from warehouse.dispatcher import Dispatcher
+from warehouse.robot import WorldCore
 
 
 class NullTransport:

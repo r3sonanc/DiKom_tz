@@ -20,10 +20,10 @@
     <section class="overview" aria-label="Состояние симуляции">
       <div class="page-heading"><h1>ЦЕНТР УПРАВЛЕНИЯ</h1></div>
       <div class="metrics">
-        <div class="metric"><span>В сети</span><strong id="onlineMetric">—</strong><small>роботов</small></div>
-        <div class="metric"><span>В движении</span><strong id="movingMetric">—</strong><small>сейчас</small></div>
-        <div class="metric"><span>Выполнено</span><strong id="completedMetric">—</strong><small>приказов</small></div>
-        <div class="metric"><span>Ошибки</span><strong id="errorMetric">—</strong><small>активных</small></div>
+        <div class="metric"><span>В сети</span><strong id="onlineMetric">-</strong><small>роботов</small></div>
+        <div class="metric"><span>В движении</span><strong id="movingMetric">-</strong><small>сейчас</small></div>
+        <div class="metric"><span>Выполнено</span><strong id="completedMetric">-</strong><small>приказов</small></div>
+        <div class="metric"><span>Ошибки</span><strong id="errorMetric">-</strong><small>активных</small></div>
       </div>
     </section>
 
@@ -34,7 +34,7 @@
 
     <div class="main-grid">
       <section class="map-card card" aria-label="Карта склада">
-        <div class="section-header"><div><h2>Карта склада</h2><p id="mapCaption">Ожидание данных симулятора</p></div><div class="map-tools"><button id="zoomOut" class="icon-button" type="button" title="Отдалить" aria-label="Отдалить">−</button><button id="zoomIn" class="icon-button" type="button" title="Приблизить" aria-label="Приблизить">+</button><button id="fitMap" class="button secondary compact" type="button">Вся карта</button></div></div>
+        <div class="section-header"><div><h2>Карта склада</h2><p id="mapCaption">Ожидание данных симулятора</p></div><div class="map-tools"><button id="zoomOut" class="icon-button" type="button" title="Отдалить" aria-label="Отдалить">-</button><button id="zoomIn" class="icon-button" type="button" title="Приблизить" aria-label="Приблизить">+</button><button id="fitMap" class="button secondary compact" type="button">Вся карта</button></div></div>
         <div class="canvas-wrap" id="canvasWrap"><canvas id="mapCanvas" tabindex="0" aria-label="Интерактивная карта склада. Выберите робота в списке и точку назначения в панели управления."></canvas><div id="emptyState" class="map-empty"><span class="empty-icon">⌁</span><strong>Подключаемся к складу</strong><span>Карта появится после первой телеметрии</span></div><div class="map-overlay"><span id="simulationTime">00:00</span></div></div>
         <div class="map-footer"><div class="legend"><span><i class="legend-node"></i>Узел</span><span><i class="legend-parking">П</i>Парковка</span><span><i class="legend-route"></i>Маршрут</span><span><i class="legend-blocked"></i>Блокировка</span></div></div>
       </section>
@@ -44,8 +44,8 @@
         <div class="control-body">
           <label class="field-label" for="robotSelect">Робот</label><select id="robotSelect"><option value="">Нет подключённых роботов</option></select>
           <div class="robot-summary"><span class="robot-avatar" id="robotAvatar">Р</span><div><strong id="selectedRobotName">Робот не выбран</strong><span id="selectedRobotState">Ожидание телеметрии</span></div><span id="robotStateDot" class="status-dot"></span></div>
-          <div class="telemetry"><div><span>Позиция, м</span><strong id="positionValue">—</strong></div><div><span>Ориентация</span><strong id="headingValue">—</strong></div><div><span>Скорость, м/с</span><strong id="speedValue">—</strong></div><div><span>Поворот, рад/с</span><strong id="angularValue">—</strong></div></div>
-          <div class="order-line"><span class="field-label">Текущий приказ</span><strong id="orderValue">—</strong><span id="routeValue" class="muted">Маршрут не назначен</span></div>
+          <div class="telemetry"><div><span>Позиция, м</span><strong id="positionValue">-</strong></div><div><span>Ориентация</span><strong id="headingValue">-</strong></div><div><span>Скорость, м/с</span><strong id="speedValue">-</strong></div><div><span>Поворот, рад/с</span><strong id="angularValue">-</strong></div></div>
+          <div class="order-line"><span class="field-label">Текущий приказ</span><strong id="orderValue">-</strong><span id="routeValue" class="muted">Маршрут не назначен</span></div>
           <div id="robotError" class="alert" hidden></div>
 
           <div class="command-section"><label class="field-label" for="targetSelect">Точка назначения</label><div class="destination"><select id="targetSelect"><option value="">Выберите узел на карте</option></select><button id="moveButton" class="button primary" type="button" disabled>Отправить <span aria-hidden="true">→</span></button></div><div class="command-buttons"><button id="parkButton" class="button secondary" type="button" disabled>На парковку</button><button id="stopButton" class="button danger" type="button" disabled><span aria-hidden="true">■</span> Остановить</button></div><div class="command-buttons"><button id="resumeButton" class="button secondary" type="button" disabled>Возобновить</button><button id="clearErrorButton" class="button secondary" type="button" disabled>Сбросить ошибку</button></div></div>
@@ -60,7 +60,7 @@
 
     <section class="fleet-card card" aria-label="Состояние всех роботов"><div class="section-header"><div><h2>Парк роботов</h2></div><span id="fleetCount" class="pill">0 роботов</span></div><div class="table-wrap"><table><thead><tr><th>Робот</th><th>Состояние</th><th>Позиция, м</th><th>Скорость</th><th>Приказ</th><th>Связь</th></tr></thead><tbody id="fleetBody"><tr><td colspan="6" class="table-empty">Ожидание первого обновления</td></tr></tbody></table></div></section>
 
-    <section class="events-card card" aria-label="Журнал событий"><div class="section-header"><div><h2>Журнал событий</h2></div><button id="clearEvents" class="button secondary compact" type="button">Очистить</button></div><ol id="eventsList" class="events-list" aria-live="polite" aria-relevant="additions"><li class="event muted"><time>—</time><span>Ожидание событий</span></li></ol></section>
+    <section class="events-card card" aria-label="Журнал событий"><div class="section-header"><div><h2>Журнал событий</h2></div><button id="clearEvents" class="button secondary compact" type="button">Очистить</button></div><ol id="eventsList" class="events-list" aria-live="polite" aria-relevant="additions"><li class="event muted"><time>-</time><span>Ожидание событий</span></li></ol></section>
   </main>
   <footer class="app-footer"></footer>
   <div id="toast" class="toast" role="status" hidden></div>

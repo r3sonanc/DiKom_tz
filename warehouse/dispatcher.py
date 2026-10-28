@@ -12,7 +12,6 @@ from typing import Any
 from warehouse.map import segment_distance
 from warehouse.robot import NODE_TOLERANCE, ROBOT_RADIUS
 
-# Simulator and dispatcher share the host's monotonic clock, including ROS processes.
 TELEMETRY_MAX_AGE = 0.5
 TELEMETRY_FUTURE_TOLERANCE = 0.1
 
@@ -325,8 +324,6 @@ class Dispatcher:
         if boot_id in robot.retired_boots or (boot_id == robot.boot_id and seq <= robot.seq):
             self.metrics["discarded_telemetry"] += 1
             return False
-        # Missing source time is supported only by legacy logical dispatcher callers;
-        # the API requires sim_time on every production telemetry message.
         source_at = state.get("sim_time", now)
         previous_source = robot.state.get("sim_time")
         if (not isinstance(source_at, (int, float)) or isinstance(source_at, bool)

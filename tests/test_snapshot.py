@@ -1,5 +1,3 @@
-"""Deterministic API-state contracts, independent of ROS or wall-clock sleeps."""
-
 import copy
 import asyncio
 import json
@@ -203,7 +201,6 @@ def test_http_actions_invalidate_cached_json_without_waiting_for_a_tick(path, bo
     transport.pending = world.snapshot(10.0)
     runtime.step(10.0)
     before = json.loads(runtime.snapshot_json(10.01))
-    # Outside a lifespan context TestClient makes requests without starting the controller loop.
     with_lifespan_disabled = TestClient(app)
     try:
         response = with_lifespan_disabled.post(path, json=body)

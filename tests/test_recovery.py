@@ -1,5 +1,3 @@
-"""Recovery barriers, retained resources and transition-only monitoring."""
-
 import copy
 import math
 import unittest

@@ -1,5 +1,3 @@
-"""Independent geometric checks for the simulator's sequential, swept-motion model."""
-
 import math
 import random
 import unittest
@@ -17,7 +15,6 @@ def _angle_is_swept(angle, start, sweep):
 
 
 def trajectory_points(x, y, yaw, speed, turn, dt, observers=()):
-    """Exact extrema of a line/arc, including closest points to fixed observers."""
     if abs(turn) < 1e-12 or speed == 0:
         end = (x + speed * math.cos(yaw) * dt,
                y + speed * math.sin(yaw) * dt)
@@ -147,12 +144,6 @@ class CollisionRegressionTests(unittest.TestCase):
         self.assertEqual(robot.error["code"], "STUCK")
 
 class MotionAudit:
-    """Observe each accepted integration using exact arcs and actual static neighbours.
-
-    WorldCore advances robots sequentially. This observer checks that model; it
-    does not invent simultaneous interpolation between separately updated poses.
-    """
-
     def __init__(self, world):
         self.world = world
         self.accepted = 0
@@ -214,7 +205,6 @@ class AuditedFleet(FleetHarness):
         self.audit.assert_positions()
 
 class UnreliableFleet(AuditedFleet):
-    """Deterministic delayed, duplicated and lossy messages in both directions."""
 
     def __init__(self, map_name="hardcore", robots=5, seed=7):
         super().__init__(map_name, robots, seed)

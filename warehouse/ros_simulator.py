@@ -33,7 +33,7 @@ class SimulatorNode(Node):
             String, "/warehouse/commands", self._command, commands_qos)
         self._last_tick = time.monotonic()
         self._timer = self.create_timer(0.02, self._tick)
-        self.get_logger().info("Симулятор готов: физика — 50 Гц, телеметрия — 10 Гц")
+        self.get_logger().info("Симулятор готов: физика - 50 Гц, телеметрия - 10 Гц")
 
     def _command(self, message: String) -> None:
         if len(message.data) > 16384:
